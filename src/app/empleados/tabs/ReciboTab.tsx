@@ -93,25 +93,6 @@ export default function ReciboTab({
             </div>
           ))}
 
-          <h3 style={{ color: GREEN, fontSize: 13, margin: "18px 0 6px" }}>DETALLE DE ASISTENCIA</h3>
-          {[
-            ["Días completos", resumen.diasCompletos],
-            ["Días media jornada", resumen.diasMedia],
-            ["Días francos", resumen.diaFranco],
-            ["Faltas injustificadas", resumen.faltaInj],
-            ["Faltas justificadas", resumen.faltaJust],
-            ["Vacaciones", resumen.vacaciones],
-            ["Descanso médico", resumen.descMed],
-            ["Otras", resumen.otras],
-            ["Horas extra 50%", resumen.he50],
-            ["Horas extra 100%", resumen.he100],
-          ].map(([label, val]) => (
-            <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13, borderBottom: "1px solid #f0f0f0" }}>
-              <span>{label}</span>
-              <span>{val}</span>
-            </div>
-          ))}
-
           <h3 style={{ color: GREEN, fontSize: 13, margin: "18px 0 6px" }}>RESUMEN DE PAGO</h3>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13, borderBottom: "1px solid #f0f0f0" }}>
             <span>Pago base</span>
