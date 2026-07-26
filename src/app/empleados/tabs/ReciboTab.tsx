@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 import { computeResumenColaborador, diasEnMes, fmtMoneyEmp } from "@/lib/empleados/calculos";
-import { descargarRecibo } from "@/lib/empleados/recibo";
 import { GREEN, inputStyle } from "@/lib/empleados/estilos";
 import { MESES } from "../EmpleadosShell";
 import type { Colaborador, ParametrosEmpleados, RegistroAsistencia } from "@/lib/empleados/types";
@@ -33,7 +33,25 @@ export default function ReciboTab({
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #recibo-imprimible, #recibo-imprimible * { visibility: visible; }
+          #recibo-imprimible {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            max-width: 100%;
+            border: none;
+            box-shadow: none;
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+          }
+        }
+      `}</style>
+
+      <div className="no-print" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
         <select value={codigo} onChange={(e) => setCodigo(e.target.value)} style={{ ...inputStyle, maxWidth: 280 }}>
           <option value="">Elegir colaborador...</option>
           {colaboradores.map((c) => (
@@ -42,17 +60,20 @@ export default function ReciboTab({
         </select>
         {colaborador && resumen && (
           <button
-            onClick={() => descargarRecibo(colaborador, resumen, mesLabel)}
+            onClick={() => window.print()}
             style={{ background: GREEN, color: "white", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
           >
-            Descargar recibo
+            Descargar PDF
           </button>
         )}
       </div>
 
       {colaborador && resumen && (
         <div id="recibo-imprimible" style={{ background: "white", border: "1px solid #ddd", borderRadius: 10, padding: 24, maxWidth: 480 }}>
-          <h2 style={{ margin: 0, fontSize: 18, color: GREEN }}>EL NUEVO RURAL</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <Image src="/logo.jpg" alt="Logo El Nuevo Rural" width={40} height={40} style={{ borderRadius: 8 }} />
+            <h2 style={{ margin: 0, fontSize: 18, color: GREEN }}>EL NUEVO RURAL</h2>
+          </div>
           <p style={{ fontSize: 12, color: "#666", marginTop: 2, marginBottom: 16 }}>
             Recibo de Sueldo (uso interno — no reemplaza el recibo legal)
           </p>
