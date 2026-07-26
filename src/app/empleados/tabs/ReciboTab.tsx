@@ -74,8 +74,10 @@ export default function ReciboTab({
             <Image src="/logo.jpg" alt="Logo El Nuevo Rural" width={40} height={40} style={{ borderRadius: 8 }} />
             <h2 style={{ margin: 0, fontSize: 18, color: GREEN }}>EL NUEVO RURAL</h2>
           </div>
+          <h3 style={{ margin: "4px 0 2px", fontSize: 14, fontWeight: 700, letterSpacing: 0.5 }}>CONSTANCIA DE PAGO</h3>
           <p style={{ fontSize: 12, color: "#666", marginTop: 2, marginBottom: 16 }}>
-            Recibo de Sueldo (uso interno — no reemplaza el recibo legal)
+            Recibí de ZONA VIRTUAL SAS la suma de {fmtMoneyEmp(resumen.totalPagar)} en concepto de pago correspondiente
+            al período {mesLabel}, por los conceptos detallados a continuación. Firmo en prueba de conformidad.
           </p>
 
           {[
@@ -122,6 +124,23 @@ export default function ReciboTab({
           <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0", marginTop: 8, fontSize: 15, fontWeight: 700, borderTop: `2px solid ${GREEN}` }}>
             <span>TOTAL A PAGAR</span>
             <span>{fmtMoneyEmp(resumen.totalPagar)}</span>
+          </div>
+
+          <div style={{ marginTop: 32, display: "flex", justifyContent: "space-between", gap: 24 }}>
+            <div style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ borderTop: "1px solid #333", paddingTop: 4, fontSize: 12 }}>Firma</div>
+            </div>
+            <div style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ borderTop: "1px solid #333", paddingTop: 4, fontSize: 12 }}>Aclaración</div>
+            </div>
+          </div>
+          <div style={{ marginTop: 20, display: "flex", justifyContent: "space-between", gap: 24 }}>
+            <div style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ borderTop: "1px solid #333", paddingTop: 4, fontSize: 12 }}>DNI</div>
+            </div>
+            <div style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ borderTop: "1px solid #333", paddingTop: 4, fontSize: 12 }}>Fecha</div>
+            </div>
           </div>
         </div>
       )}
