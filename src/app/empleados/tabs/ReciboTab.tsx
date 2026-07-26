@@ -85,7 +85,7 @@ export default function ReciboTab({
             ["Colaborador", `${colaborador.nombre} (${colaborador.codigo})`],
             ["Área / Cargo", `${colaborador.area || "-"} / ${colaborador.cargo || "-"}`],
             ["Período", mesLabel],
-            ["Valor", fmtMoneyEmp(colaborador.valor)],
+            ["Valor", fmtMoneyEmp(resumen.totalPagar)],
           ].map(([label, val]) => (
             <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13, borderBottom: "1px solid #f0f0f0" }}>
               <span>{label}</span>
@@ -98,7 +98,7 @@ export default function ReciboTab({
             <span>{fmtMoneyEmp(resumen.totalPagar)}</span>
           </div>
 
-          <div style={{ marginTop: 32, display: "flex", justifyContent: "space-between", gap: 24 }}>
+          <div style={{ marginTop: 64, display: "flex", justifyContent: "space-between", gap: 24 }}>
             <div style={{ flex: 1, textAlign: "center" }}>
               <div style={{ borderTop: "1px solid #333", paddingTop: 4, fontSize: 12 }}>Firma</div>
             </div>
