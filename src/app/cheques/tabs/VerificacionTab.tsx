@@ -469,22 +469,41 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                   return <div style={{ fontSize: 12, color: "#555" }}>Sin períodos informados.</div>;
                 }
                 return (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} data-testid="evolucion">
-                    {evo.map((p) => (
-                      <div
-                        key={p.periodo}
-                        style={{ border: "1px solid #e0e0e0", borderRadius: 8, padding: "8px 10px", minWidth: 130 }}
-                      >
-                        <div style={{ fontSize: 11, color: "#555", marginBottom: 4 }}>
-                          {nombrePeriodo(p.periodo)}
+                  <>
+                    <div style={{ fontSize: 11, color: "#777", marginBottom: 8 }}>
+                      El chip es la <strong>peor</strong> situación del mes. Debajo, la deuda total
+                      y cuánta de esa plata estaba en situación irregular: un mismo atraso chico se
+                      repite mes a mes y sin el monto parece que todo el período estuvo mal.
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} data-testid="evolucion">
+                      {evo.map((p) => (
+                        <div
+                          key={p.periodo}
+                          style={{ border: "1px solid #e0e0e0", borderRadius: 8, padding: "8px 10px", minWidth: 130 }}
+                        >
+                          <div style={{ fontSize: 11, color: "#555", marginBottom: 4 }}>
+                            {nombrePeriodo(p.periodo)}
+                          </div>
+                          <ChipSituacion nivel={p.peorSituacion} />
+                          <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>
+                            {fmtMoney(pesosDesdeMiles(p.totalMiles))}
+                          </div>
+                          {p.irregularMiles > 0 && (
+                            <div
+                              data-testid="evolucion-irregular"
+                              style={{ fontSize: 10, color: "#784212", marginTop: 2 }}
+                            >
+                              irregular: {fmtMoney(pesosDesdeMiles(p.irregularMiles))} (
+                              {p.proporcionIrregular < 0.01
+                                ? "menos del 1%"
+                                : `${Math.round(p.proporcionIrregular * 100)}%`}
+                              )
+                            </div>
+                          )}
                         </div>
-                        <ChipSituacion nivel={p.peorSituacion} />
-                        <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>
-                          {fmtMoney(pesosDesdeMiles(p.totalMiles))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </>
                 );
               })()
             ) : (

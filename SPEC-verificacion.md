@@ -76,6 +76,8 @@ Base: `https://api.bcra.gob.ar`
 ### V5 — Evolución
 - V5.1 Muestra la peor situación por período de los últimos meses informados.
 - V5.2 Si no hay histórico, lo dice sin romper el resto de la consulta.
+- V5.3 Cada período con situación irregular indica cuánta plata representa y qué porcentaje
+       del mes, por el mismo motivo que V3.7.
 
 ### V6 — Cheque denunciado
 - V6.1 Selector con los bancos que informa la API (traídos de `/cheques/v1.0/entidades`).
@@ -98,7 +100,9 @@ Base: `https://api.bcra.gob.ar`
 
 ### V9 — Presentación
 - V9.1 Mismo lenguaje visual que el resto del módulo (NAVY `#1F3864`, Arial, `estilos.ts`).
-- V9.2 En pantallas angostas nada scrollea en horizontal salvo las tablas, dentro de su caja.
+- V9.2 En pantallas angostas nada scrollea en horizontal salvo las tablas, dentro de su caja,
+       y esa caja se puede arrastrar: si la tabla desborda sin poder arrastrarla, el monto
+       queda cortado y es un dato inalcanzable.
 - V9.3 Sin dependencias nuevas.
 
 ## Fuera de alcance
@@ -118,8 +122,11 @@ Base: `https://api.bcra.gob.ar`
    real, hace consultas **reales** a la API del BCRA y comprueba V1–V9 en desktop y móvil.
    Los checks que dependen de la API externa quedan marcados como tales en la salida.
 
-Estado al 29/07/2026: **27 comprobaciones de navegador + 25 de validación de CUIT, todas
+Estado al 29/07/2026: **29 comprobaciones de navegador + 25 de validación de CUIT, todas
 en verde.**
+
+Pendiente de despliegue: aplicar `supabase/008_cheques_terceros_cuit.sql` en la base. Sin esa
+columna, guardar un cheque de terceros falla (el `insert` manda `cuit_librador`).
 
 ### Hallazgo durante la verificación: la peor situación sin el monto engaña
 
@@ -138,3 +145,8 @@ bueno por una deuda insignificante y probablemente olvidada. Por eso:
 
 Esto no oculta el dato: la peor situación se sigue mostrando bien visible. Lo que cambia es
 que se muestra **con su contexto**.
+
+El bloque "cómo viene mes a mes" tenía el mismo defecto multiplicado por doce: mostraba los
+12 períodos en **"5 · Irrecuperable"**, siempre por los mismos $35.000. Leído de corrido daba
+un año entero en rojo. Ahora cada mes que tiene situación irregular dice el monto y el
+porcentaje (`irregular: $35.000 (menos del 1%)`).

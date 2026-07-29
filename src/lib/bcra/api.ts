@@ -243,19 +243,38 @@ export interface PeriodoResumido {
   periodo: string;
   peorSituacion: number;
   totalMiles: number;
+  /** Monto del período en situación 3 o peor. */
+  irregularMiles: number;
+  /** Qué proporción del período está en situación irregular (0 a 1). */
+  proporcionIrregular: number;
 }
 
-/** Peor situación y total por período, del más nuevo al más viejo. */
+/**
+ * Peor situación y total por período, del más nuevo al más viejo.
+ *
+ * Se informa también cuánta plata había en situación irregular en cada período: la peor
+ * situación sola repite mes a mes el mismo problema aislado (una deuda chica en situación 5
+ * pinta doce meses de rojo aunque el resto de la cartera esté impecable).
+ */
 export function evolucionPorPeriodo(deudas: Deudas): PeriodoResumido[] {
   return [...(deudas.periodos ?? [])]
-    .map((p) => ({
-      periodo: p.periodo,
-      peorSituacion: (p.entidades ?? []).reduce(
-        (max, e) => Math.max(max, Number(e.situacion) || 0),
-        0,
-      ),
-      totalMiles: (p.entidades ?? []).reduce((s, e) => s + (Number(e.monto) || 0), 0),
-    }))
+    .map((p) => {
+      const entidades = p.entidades ?? [];
+      const totalMiles = entidades.reduce((s, e) => s + (Number(e.monto) || 0), 0);
+      const irregularMiles = entidades
+        .filter((e) => (Number(e.situacion) || 0) >= SITUACION_IRREGULAR_DESDE)
+        .reduce((s, e) => s + (Number(e.monto) || 0), 0);
+      return {
+        periodo: p.periodo,
+        peorSituacion: entidades.reduce(
+          (max, e) => Math.max(max, Number(e.situacion) || 0),
+          0,
+        ),
+        totalMiles,
+        irregularMiles,
+        proporcionIrregular: totalMiles > 0 ? irregularMiles / totalMiles : 0,
+      };
+    })
     .sort((a, b) => (a.periodo < b.periodo ? 1 : -1));
 }
 

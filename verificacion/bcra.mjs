@@ -164,6 +164,23 @@ function checkApi(id, desc, ok, detail) {
       evolucion === 1 || sinHistorico === 1,
       evolucion ? `${await page.locator('[data-testid="evolucion"] > div').count()} períodos` : "sin histórico");
 
+    /*
+     * La evolución mostraba doce meses seguidos de "5 · Irrecuperable" por la misma deuda
+     * de $35.000, o sea el mismo error que se corrigió en el veredicto pero repetido mes a
+     * mes. Cada período que tenga situación irregular tiene que decir cuánta plata es.
+     */
+    if (evolucion === 1) {
+      const tarjetasIrregulares = await page
+        .locator('[data-testid="evolucion"] > div')
+        .filter({ hasText: /Irrecuperable|Riesgo (medio|alto)/ })
+        .count();
+      const conMonto = await page.locator('[data-testid="evolucion-irregular"]').count();
+      checkApi("V5.3", "Cada mes con situación irregular dice cuánta plata representa",
+        tarjetasIrregulares === 0 || conMonto >= tarjetasIrregulares,
+        `${tarjetasIrregulares} meses irregulares, ${conMonto} con el monto a la vista`
+        + (conMonto ? ` → "${(await page.locator('[data-testid="evolucion-irregular"]').first().textContent()).trim()}"` : ""));
+    }
+
     const veredictoTxt = (await page.locator('[data-testid="veredicto"]').textContent()).trim();
     checkApi("VEREDICTO", "Da un veredicto legible del riesgo", veredictoTxt.length > 10,
       veredictoTxt.slice(0, 90));
@@ -296,6 +313,31 @@ function checkApi(id, desc, ok, detail) {
   await mpage.waitForTimeout(500);
   const mb = await mpage.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
   check("V9.2b", "Móvil 390px: la página no scrollea en horizontal", mb.sw <= mb.cw + 1, JSON.stringify(mb));
+
+  /*
+   * Que la página no scrollee no alcanza: en 390px la tabla es más ancha que la pantalla y
+   * el monto queda cortado a mitad de camino. Eso está bien SOLO si la caja de la tabla se
+   * puede arrastrar para verlo. Si no, el importe es un dato inalcanzable.
+   */
+  const tabla = await mpage.evaluate(() => {
+    const caja = [...document.querySelectorAll("div")].find(
+      (d) => getComputedStyle(d).overflowX === "auto" && d.querySelector("table"),
+    );
+    if (!caja) return { hay: false };
+    const antes = caja.scrollLeft;
+    caja.scrollLeft = 9999;
+    const despues = caja.scrollLeft;
+    caja.scrollLeft = antes;
+    return {
+      hay: true,
+      desborda: caja.scrollWidth > caja.clientWidth + 1,
+      sePuedeArrastrar: despues > 0,
+    };
+  });
+  check("V9.2c", "Móvil: la tabla ancha se puede arrastrar para ver el monto completo",
+    tabla.hay && (!tabla.desborda || tabla.sePuedeArrastrar),
+    JSON.stringify(tabla));
+
   await mpage.screenshot({ path: path.join(OUT, "07-verificacion-movil.png"), fullPage: true });
 
   check("CONSOLA", "Sin errores de consola ni excepciones",
