@@ -10,6 +10,7 @@ import { useConfirmDialog } from "../useConfirmDialog";
 import TablaTab from "./tabs/TablaTab";
 import ProveedoresTab from "./tabs/ProveedoresTab";
 import MensualTab from "./tabs/MensualTab";
+import CalendarioTab from "./tabs/CalendarioTab";
 import AntiguedadTab from "./tabs/AntiguedadTab";
 import ConciliacionTab from "./tabs/ConciliacionTab";
 import TercerosTab from "./tabs/TercerosTab";
@@ -27,6 +28,7 @@ const TABS: { key: string; label: string }[] = [
   { key: "tabla", label: "Tabla y dashboard" },
   { key: "proveedores", label: "Resumen por proveedor" },
   { key: "mensual", label: "Resumen mensual" },
+  { key: "calendario", label: "Calendario" },
   { key: "antiguedad", label: "Antigüedad" },
   { key: "conciliacion", label: "Conciliación bancaria" },
   { key: "terceros", label: "Cheques de Terceros" },
@@ -339,6 +341,7 @@ export default function ChequesShell({
         <ProveedoresTab enriched={enriched} limites={limites} onSetLimite={setLimiteProveedor} />
       )}
       {tab === "mensual" && <MensualTab enriched={enriched} />}
+      {tab === "calendario" && <CalendarioTab enriched={enriched} />}
       {tab === "antiguedad" && <AntiguedadTab enriched={enriched} />}
       {tab === "conciliacion" && (
         <ConciliacionTab
