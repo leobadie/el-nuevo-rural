@@ -95,5 +95,22 @@ qué días quedan con margen para emitir cheques nuevos.
 1. `npx tsc --noEmit` sin errores.
 2. `npm run lint` sin errores nuevos.
 3. `npm run build` exitoso.
-4. Carga real en navegador de `/cheques` → pestaña Calendario, con screenshots
-   en desktop (1280px) y móvil (390px), verificando R1–R8.
+4. `npm run verificar:calendario` (con `npm run dev` corriendo en otra terminal):
+   carga el calendario en un navegador real y comprueba R1–R8 uno por uno, en
+   desktop (1280px) y móvil (390px). Deja las capturas en `verificacion/capturas/`.
+
+El script vive en `verificacion/calendario.mjs` y usa el Edge o Chrome ya instalado
+(no descarga navegadores). Se apoya en la ruta `/login/preview-calendario`, un banco de
+pruebas con cheques ficticios que **sólo existe en desarrollo**: en producción da 404.
+
+Estado al 29/07/2026: 28 comprobaciones, 28 en verde.
+
+### Defectos encontrados y corregidos durante la verificación
+
+- **Scroll horizontal de toda la página en móvil.** El `body` es un contenedor flex
+  (`layout.tsx`), así que el ancho mínimo de la grilla (560px) empujaba el ancho de la
+  página entera en vez de scrollear sólo el calendario. Resuelto haciendo del div raíz
+  del tab una grilla de una columna encogible (`minmax(0, 1fr)`).
+- **Error de hidratación al recargar con topes guardados.** Leer `localStorage` durante
+  el primer render hacía que el HTML del cliente no coincidiera con el del servidor.
+  Resuelto leyendo los topes con `useSyncExternalStore`.

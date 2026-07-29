@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { fmtDate, fmtMoney, todayMidnight } from "@/lib/cheques/calculos";
 import {
   DIAS_CORTOS,
@@ -39,25 +39,54 @@ function leerTopes(): TopesDiarios {
   }
 }
 
+/*
+ * Los topes viven en localStorage, que es un sistema externo a React. Se leen con
+ * useSyncExternalStore para que el servidor y la hidratación usen siempre SIN_TOPES
+ * y React aplique el valor guardado recién después de montar: leerlo durante el
+ * primer render haría que el HTML del cliente no coincida con el del servidor.
+ * El snapshot se cachea porque useSyncExternalStore exige un valor estable.
+ */
+const suscriptores = new Set<() => void>();
+let snapshotTopes: TopesDiarios | null = null;
+
+function suscribirTopes(alCambiar: () => void): () => void {
+  suscriptores.add(alCambiar);
+  return () => {
+    suscriptores.delete(alCambiar);
+  };
+}
+
+function snapshotCliente(): TopesDiarios {
+  if (snapshotTopes === null) snapshotTopes = leerTopes();
+  return snapshotTopes;
+}
+
+function snapshotServidor(): TopesDiarios {
+  return SIN_TOPES;
+}
+
+function guardarTopes(next: TopesDiarios) {
+  snapshotTopes = next;
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ monto: next.monto ?? 0, cantidad: next.cantidad ?? 0 }),
+    );
+  } catch {
+    /* localStorage no disponible: los topes valen solo para esta sesión */
+  }
+  suscriptores.forEach((alCambiar) => alCambiar());
+}
+
 export default function CalendarioTab({ enriched }: { enriched: ChequeEnriquecido[] }) {
   const hoy = useMemo(() => todayMidnight(), []);
   const [anio, setAnio] = useState(() => hoy.getFullYear());
   const [mes, setMes] = useState(() => hoy.getMonth());
-  const [topes, setTopes] = useState<TopesDiarios>(leerTopes);
+  const topes = useSyncExternalStore(suscribirTopes, snapshotCliente, snapshotServidor);
   const [diaSel, setDiaSel] = useState<string | null>(null);
   const [soloHabiles, setSoloHabiles] = useState(true);
 
-  function actualizarTopes(next: TopesDiarios) {
-    setTopes(next);
-    try {
-      window.localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ monto: next.monto ?? 0, cantidad: next.cantidad ?? 0 }),
-      );
-    } catch {
-      /* localStorage no disponible: los topes valen solo para esta sesión */
-    }
-  }
+  const actualizarTopes = guardarTopes;
 
   const porFecha = useMemo(() => agruparPorFechaCobro(enriched), [enriched]);
   const sinFecha = useMemo(() => contarSinFechaCobro(enriched), [enriched]);
@@ -101,7 +130,10 @@ export default function CalendarioTab({ enriched }: { enriched: ChequeEnriquecid
   } as const;
 
   return (
-    <div>
+    // Grilla de una sola columna que puede encogerse (minmax(0,1fr)): sin esto, el ancho
+    // mínimo de la grilla del mes empuja el ancho de la página y hace scrollear en horizontal
+    // toda la pantalla en móvil, en lugar de scrollear solo el calendario.
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)" }}>
       {/* Topes */}
       <div style={{ background: "#fff", border: "1px solid #e0e0e0", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, marginBottom: 10 }}>

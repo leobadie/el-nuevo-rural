@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# capturas de las verificaciones en navegador (se regeneran al correrlas)
+/verificacion/capturas/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
