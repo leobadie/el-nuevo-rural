@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "verificar:calendario": "node verificacion/calendario.mjs"
+    "verificar:calendario": "node verificacion/calendario.mjs",
+    "verificar:feriados": "node verificacion/feriados.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",

@@ -13,8 +13,19 @@ qué días quedan con margen para emitir cheques nuevos.
 | # | Decisión | Valor elegido |
 |---|----------|---------------|
 | D1 | Criterio de "día disponible" | Tope diario configurable (monto y/o cantidad), con semáforo |
-| D2 | Alcance de datos | Solo cheques propios (tabla `cheques`), no terceros |
-| D3 | Filtro de estado | Todos los cheques (incluye Pagados y Rechazados) |
+| D2 | Alcance de datos | ~~Solo cheques propios~~ → ampliado en D8 |
+| D3 | Filtro de estado | ~~Todos los cheques~~ → ampliado en D4 |
+
+### Segunda etapa — precisión (29/07/2026)
+
+| # | Decisión | Valor elegido |
+|---|----------|---------------|
+| D4 | Estados contados | Los **Pagados sí cuentan** (debitaron plata ese día); los **Rechazados no** (nunca debitaron). Selector para cambiarlo. |
+| D5 | Tope vs. ingresos | El tope se mide contra **lo que sale** (salidas brutas). Los ingresos se muestran aparte y en el neto, pero no habilitan a emitir más. |
+| D6 | Cheque en día no hábil | Queda en la fecha que tiene cargada, con aviso de que se cobra el hábil siguiente. **No se corre el monto** (la grilla sigue coincidiendo con la tabla). |
+| D7 | Monto del día | Usa `debito_banco` cuando existe (es lo que realmente salió del banco); si difiere del importe nominal, se avisa. |
+| D8 | Cheques de terceros | Se suman como ingresos del día los que están **En cartera** o **Depositado**. Los **Entregado** (se usaron para pagar) y **Rechazado** no entran. |
+| D9 | Feriados | Base calculada por año: fijos + móviles derivados de Pascua + traslados de la Ley 27.399. Los no laborables turísticos ("puentes") se fijan por decreto y **no son calculables**: quedan en una lista editable por el usuario. |
 
 ## Requisitos verificables
 
@@ -71,6 +82,38 @@ qué días quedan con margen para emitir cheques nuevos.
 - R8.2 En pantallas angostas la grilla scrollea horizontalmente; la página nunca scrollea en horizontal.
 - R8.3 Sin dependencias nuevas.
 
+## Requisitos verificables — segunda etapa
+
+### R9 — Estados que se cuentan (D4)
+- R9.1 Por defecto se cuentan todos los estados **menos Rechazado**.
+- R9.2 Hay un control visible para incluir o excluir cada estado (Pagado, Vencido, Próximo, Pendiente, Rechazado).
+- R9.3 La elección afecta al monto y cantidad del día, al semáforo, a los totales del mes y a las sugerencias.
+- R9.4 La elección persiste entre recargas (`localStorage`).
+- R9.5 Un aviso indica cuántos cheques quedan afuera por el filtro de estados.
+
+### R10 — Feriados y días no hábiles (D9)
+- R10.1 Los feriados nacionales del año visible se marcan en la grilla, distinguibles de un fin de semana.
+- R10.2 Al ver el detalle de un día feriado, se muestra el nombre del feriado.
+- R10.3 Los feriados móviles se derivan de la fecha de Pascua del año (Carnaval = lunes y martes 48 y 47 días antes; Viernes Santo = 2 días antes; Jueves Santo = 3 días antes).
+- R10.4 Los feriados trasladables se corren según la Ley 27.399: si caen martes o miércoles, al lunes anterior; si caen jueves o viernes, al lunes siguiente.
+- R10.5 El cálculo funciona para cualquier año, no solo 2026.
+- R10.6 El usuario puede agregar y quitar días no hábiles propios (puentes por decreto, cierres bancarios), y persisten en `localStorage`.
+- R10.7 "Solo días hábiles" excluye de las sugerencias los sábados, domingos **y** los días no hábiles.
+- R10.8 Si un cheque cae en día no hábil, se avisa que se cobra el hábil siguiente y se indica qué día sería (D6).
+
+### R11 — Débito real del banco (D7)
+- R11.1 El monto de un cheque es `debito_banco` cuando ese campo tiene valor; si no, el importe nominal.
+- R11.2 Cuando el débito difiere del importe nominal, el día lo señala y el detalle muestra ambos valores.
+- R11.3 El detalle del día indica el total nominal y el total realmente debitado cuando no coinciden.
+
+### R12 — Ingresos por cheques de terceros (D5, D8)
+- R12.1 El día muestra, además de lo que sale, lo que entra por cheques de terceros a cobrar (estados En cartera y Depositado).
+- R12.2 El día muestra el neto (entra menos sale) cuando hay ingresos.
+- R12.3 El semáforo y el margen se siguen calculando **solo sobre las salidas** (D5).
+- R12.4 El detalle del día lista los cheques de terceros que entran, con librador, banco e importe.
+- R12.5 Un control permite mostrar u ocultar los ingresos, y persiste entre recargas.
+- R12.6 Si no hay cheques de terceros cargados, la vista no cambia respecto de la primera etapa.
+
 ## Asunciones
 
 - A1 Los topes son globales del usuario/navegador, no por proveedor (ya existen límites por
@@ -95,15 +138,20 @@ qué días quedan con margen para emitir cheques nuevos.
 1. `npx tsc --noEmit` sin errores.
 2. `npm run lint` sin errores nuevos.
 3. `npm run build` exitoso.
-4. `npm run verificar:calendario` (con `npm run dev` corriendo en otra terminal):
-   carga el calendario en un navegador real y comprueba R1–R8 uno por uno, en
+4. `npm run verificar:feriados`: comprueba el cálculo de feriados (Pascua, traslados de
+   la Ley 27.399, días propios, próximo día hábil). No necesita la app corriendo.
+5. `npm run verificar:calendario` (con `npm run dev` corriendo en otra terminal):
+   carga el calendario en un navegador real y comprueba R1–R12 uno por uno, en
    desktop (1280px) y móvil (390px). Deja las capturas en `verificacion/capturas/`.
 
-El script vive en `verificacion/calendario.mjs` y usa el Edge o Chrome ya instalado
-(no descarga navegadores). Se apoya en la ruta `/login/preview-calendario`, un banco de
-pruebas con cheques ficticios que **sólo existe en desarrollo**: en producción da 404.
+Los scripts viven en `verificacion/` y usan el Edge o Chrome ya instalado (no descargan
+navegadores). El de navegador se apoya en la ruta `/login/preview-calendario`, un banco de
+pruebas con cheques y cheques de terceros ficticios que **sólo existe en desarrollo**: en
+producción da 404. El banco de pruebas calcula sus fechas en relativo (próximo sábado,
+feriado del mes, sábado ya pagado), así que los casos límite se verifican cualquier día
+que se corra.
 
-Estado al 29/07/2026: 28 comprobaciones, 28 en verde.
+Estado al 29/07/2026: **52 comprobaciones de navegador + 43 de feriados, todas en verde.**
 
 ### Defectos encontrados y corregidos durante la verificación
 
@@ -114,3 +162,17 @@ Estado al 29/07/2026: 28 comprobaciones, 28 en verde.
 - **Error de hidratación al recargar con topes guardados.** Leer `localStorage` durante
   el primer render hacía que el HTML del cliente no coincidiera con el del servidor.
   Resuelto leyendo los topes con `useSyncExternalStore`.
+- **Segunda etapa: se anunciaba fecha de cobro para cheques ya pagados.** Un cheque con
+  fecha en día no hábil pero ya debitado mostraba "se cobra el hábil siguiente", una fecha
+  que además podía estar en el pasado. Ahora el aviso solo aparece si queda algo por
+  debitar, y el texto es "Cobro efectivo:" en vez de una frase en futuro.
+
+### Sobre los feriados
+
+Las listas de feriados publicadas en la web **se contradicen entre sí**: al construir esto,
+una fuente daba Carnaval solo el martes y otra lunes y martes; una daba el Día de la
+Soberanía el 20/11 y otra el 23/11. Por eso no se copió ninguna lista: se calcula lo
+calculable (Pascua determina Carnaval y Semana Santa; la Ley 27.399 determina los
+traslados) y `npm run verificar:feriados` comprueba el resultado contra las fechas donde
+las fuentes sí coinciden. Los "puentes" turísticos se fijan por decreto cada año y no son
+calculables: se cargan a mano desde el panel "Días no hábiles propios".

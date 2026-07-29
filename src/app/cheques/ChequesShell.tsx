@@ -341,7 +341,7 @@ export default function ChequesShell({
         <ProveedoresTab enriched={enriched} limites={limites} onSetLimite={setLimiteProveedor} />
       )}
       {tab === "mensual" && <MensualTab enriched={enriched} />}
-      {tab === "calendario" && <CalendarioTab enriched={enriched} />}
+      {tab === "calendario" && <CalendarioTab enriched={enriched} terceros={terceros} />}
       {tab === "antiguedad" && <AntiguedadTab enriched={enriched} />}
       {tab === "conciliacion" && (
         <ConciliacionTab
