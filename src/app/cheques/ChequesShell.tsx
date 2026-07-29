@@ -11,6 +11,7 @@ import TablaTab from "./tabs/TablaTab";
 import ProveedoresTab from "./tabs/ProveedoresTab";
 import MensualTab from "./tabs/MensualTab";
 import CalendarioTab from "./tabs/CalendarioTab";
+import VerificacionTab from "./tabs/VerificacionTab";
 import AntiguedadTab from "./tabs/AntiguedadTab";
 import ConciliacionTab from "./tabs/ConciliacionTab";
 import TercerosTab from "./tabs/TercerosTab";
@@ -32,6 +33,7 @@ const TABS: { key: string; label: string }[] = [
   { key: "antiguedad", label: "Antigüedad" },
   { key: "conciliacion", label: "Conciliación bancaria" },
   { key: "terceros", label: "Cheques de Terceros" },
+  { key: "verificacion", label: "Verificación" },
   { key: "historial", label: "Historial" },
 ];
 
@@ -74,6 +76,14 @@ export default function ChequesShell({
   );
   const [tab, setTab] = useState("tabla");
   const [saveError, setSaveError] = useState("");
+  /* CUIT que llega desde "Verificar" en Cheques de Terceros: la pestaña Verificación se
+     monta de cero con ese valor (la key fuerza el remonte si se pide otro CUIT). */
+  const [cuitAVerificar, setCuitAVerificar] = useState("");
+
+  function verificarLibrador(cuit: string) {
+    setCuitAVerificar(cuit);
+    setTab("verificacion");
+  }
 
   const enriched = useMemo(() => enriquecerCheques(cheques), [cheques]);
 
@@ -357,7 +367,11 @@ export default function ChequesShell({
           onUpdate={updateTercero}
           onDelete={deleteTercero}
           onCambiarEstado={cambiarEstadoTercero}
+          onVerificarLibrador={verificarLibrador}
         />
+      )}
+      {tab === "verificacion" && (
+        <VerificacionTab key={cuitAVerificar} cuitInicial={cuitAVerificar} />
       )}
       {tab === "historial" && <HistorialTab enriched={enriched} />}
 

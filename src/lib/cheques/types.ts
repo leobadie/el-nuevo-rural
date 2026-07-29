@@ -45,6 +45,8 @@ export interface ChequeTercero {
   id: string;
   n_cheque: string | null;
   librador: string;
+  /** CUIT/CUIL del librador, 11 dígitos sin guiones. Opcional (migración 008). */
+  cuit_librador: string | null;
   banco: string | null;
   fecha_emision: string | null;
   fecha_cobro: string | null;

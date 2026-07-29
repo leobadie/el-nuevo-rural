@@ -86,6 +86,8 @@ const tercerosMock: ChequeTercero[] = MOCK_TERCEROS.map(
     id: `mock-t-${i}`,
     n_cheque: `T-${500 + i}`,
     librador,
+    // CUIT real de YPF (dato público) en el primero, para probar el botón "verificar".
+    cuit_librador: i === 0 ? "30546689979" : null,
     banco,
     fecha_emision: d(-15),
     fecha_cobro: fecha,

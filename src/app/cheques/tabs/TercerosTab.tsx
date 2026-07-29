@@ -4,11 +4,13 @@ import { useMemo, useState } from "react";
 import { Plus, Trash2, Pencil, Save, X } from "lucide-react";
 import { fmtDate, fmtMoney } from "@/lib/cheques/calculos";
 import { NAVY, inputStyle, thStyle, tdStyle } from "@/lib/cheques/estilos";
+import { formatearCuit, normalizarCuit, validarCuit } from "@/lib/bcra/cuit";
 import type { ChequeTercero, NuevoChequeTercero } from "@/lib/cheques/types";
 
 const emptyFormTercero: NuevoChequeTercero = {
   n_cheque: "",
   librador: "",
+  cuit_librador: "",
   banco: "",
   fecha_emision: "",
   fecha_cobro: "",
@@ -29,12 +31,14 @@ export default function TercerosTab({
   onUpdate,
   onDelete,
   onCambiarEstado,
+  onVerificarLibrador,
 }: {
   terceros: ChequeTercero[];
   onAdd: (nuevo: NuevoChequeTercero) => Promise<void>;
   onUpdate: (id: string, patch: Partial<ChequeTercero>) => Promise<void>;
   onDelete: (id: string) => void;
   onCambiarEstado: (id: string, estado: ChequeTercero["estado"]) => void;
+  onVerificarLibrador?: (cuit: string) => void;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<NuevoChequeTercero>(emptyFormTercero);
@@ -60,9 +64,29 @@ export default function TercerosTab({
     };
   }, [terceros]);
 
+  const [errorCuit, setErrorCuit] = useState("");
+
+  /* El CUIT es opcional, pero si se carga tiene que ser válido: guardarlo mal haría que la
+     verificación en el BCRA devuelva "sin datos" y parezca que el librador está limpio.
+     Se devuelve el motivo del rechazo para decir qué está mal, no sólo que no sirve. */
+  function cuitParaGuardar(
+    valor: string | null | undefined,
+  ): { cuit: string | null } | { motivo: string } {
+    const limpio = normalizarCuit(valor ?? "");
+    if (!limpio) return { cuit: null };
+    const r = validarCuit(limpio);
+    return r.valido ? { cuit: r.cuit } : { motivo: r.motivo };
+  }
+
   async function agregarTercero() {
     if (!form.librador.trim() || !form.importe) return;
-    await onAdd(form);
+    const cuit = cuitParaGuardar(form.cuit_librador);
+    if ("motivo" in cuit) {
+      setErrorCuit(cuit.motivo);
+      return;
+    }
+    setErrorCuit("");
+    await onAdd({ ...form, cuit_librador: cuit.cuit });
     setForm(emptyFormTercero);
     setShowForm(false);
   }
@@ -73,7 +97,13 @@ export default function TercerosTab({
   }
   async function saveEdit() {
     if (!editForm) return;
-    await onUpdate(editForm.id, editForm);
+    const cuit = cuitParaGuardar(editForm.cuit_librador);
+    if ("motivo" in cuit) {
+      setErrorCuit(cuit.motivo);
+      return;
+    }
+    setErrorCuit("");
+    await onUpdate(editForm.id, { ...editForm, cuit_librador: cuit.cuit });
     setEditingId(null);
     setEditForm(null);
   }
@@ -141,6 +171,19 @@ export default function TercerosTab({
               <input style={inputStyle} value={form.librador} onChange={(e) => setForm({ ...form, librador: e.target.value })} />
             </div>
             <div>
+              <label style={{ fontSize: 11, fontWeight: 700 }}>CUIT del librador (opcional)</label>
+              <input
+                data-testid="input-cuit-tercero"
+                placeholder="30-54668997-9"
+                style={inputStyle}
+                value={form.cuit_librador ?? ""}
+                onChange={(e) => {
+                  setForm({ ...form, cuit_librador: e.target.value });
+                  setErrorCuit("");
+                }}
+              />
+            </div>
+            <div>
               <label style={{ fontSize: 11, fontWeight: 700 }}>Banco</label>
               <input style={inputStyle} value={form.banco ?? ""} onChange={(e) => setForm({ ...form, banco: e.target.value })} />
             </div>
@@ -161,6 +204,11 @@ export default function TercerosTab({
               <input style={inputStyle} value={form.observaciones ?? ""} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} />
             </div>
           </div>
+          {errorCuit && (
+            <div data-testid="error-cuit-tercero" style={{ fontSize: 12, color: "#922B21", marginTop: 8 }}>
+              {errorCuit}
+            </div>
+          )}
           <button onClick={agregarTercero} style={{ marginTop: 12, background: NAVY, color: "white", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
             Guardar cheque
           </button>
@@ -212,7 +260,19 @@ export default function TercerosTab({
                 return (
                   <tr key={t.id} style={{ background: "#FFF9C4" }}>
                     <td style={tdStyle}><input style={inputStyle} value={editForm.n_cheque ?? ""} onChange={(e) => setEditForm({ ...editForm, n_cheque: e.target.value })} /></td>
-                    <td style={tdStyle}><input style={inputStyle} value={editForm.librador} onChange={(e) => setEditForm({ ...editForm, librador: e.target.value })} /></td>
+                    <td style={tdStyle}>
+                      <input style={inputStyle} value={editForm.librador} onChange={(e) => setEditForm({ ...editForm, librador: e.target.value })} />
+                      <input
+                        style={{ ...inputStyle, marginTop: 4, fontSize: 11 }}
+                        placeholder="CUIT (opcional)"
+                        value={editForm.cuit_librador ?? ""}
+                        onChange={(e) => {
+                          setEditForm({ ...editForm, cuit_librador: e.target.value });
+                          setErrorCuit("");
+                        }}
+                      />
+                      {errorCuit && <div style={{ fontSize: 10, color: "#922B21", marginTop: 2 }}>{errorCuit}</div>}
+                    </td>
                     <td style={tdStyle}><input style={inputStyle} value={editForm.banco ?? ""} onChange={(e) => setEditForm({ ...editForm, banco: e.target.value })} /></td>
                     <td style={tdStyle}><input type="date" style={inputStyle} value={editForm.fecha_cobro ?? ""} onChange={(e) => setEditForm({ ...editForm, fecha_cobro: e.target.value })} /></td>
                     <td style={tdStyle}><input type="number" style={inputStyle} value={editForm.importe} onChange={(e) => setEditForm({ ...editForm, importe: parseFloat(e.target.value) || 0 })} /></td>
@@ -230,7 +290,12 @@ export default function TercerosTab({
               return (
                 <tr key={t.id} style={{ background: style.bg, borderTop: "1px solid #eee" }}>
                   <td style={{ ...tdStyle, fontWeight: 700 }}>{t.n_cheque || "-"}</td>
-                  <td style={tdStyle}>{t.librador}</td>
+                  <td style={tdStyle}>
+                    {t.librador}
+                    {t.cuit_librador && (
+                      <div style={{ fontSize: 10, color: "#666" }}>{formatearCuit(t.cuit_librador)}</div>
+                    )}
+                  </td>
                   <td style={tdStyle}>{t.banco || "-"}</td>
                   <td style={tdStyle}>{fmtDate(t.fecha_cobro)}</td>
                   <td style={tdStyle}>{fmtMoney(t.importe)}</td>
@@ -258,6 +323,17 @@ export default function TercerosTab({
                       {t.estado !== "En cartera" && (
                         <button onClick={() => onCambiarEstado(t.id, "En cartera")} title="Volver a En cartera" style={{ border: "1px solid #ccc", background: "white", color: "#333", borderRadius: 4, padding: "4px 8px", fontSize: 10, cursor: "pointer" }}>
                           Revertir
+                        </button>
+                      )}
+                      {t.cuit_librador && onVerificarLibrador && (
+                        <button
+                          data-testid="btn-verificar-librador"
+                          data-cuit={t.cuit_librador}
+                          onClick={() => onVerificarLibrador(t.cuit_librador!)}
+                          title={`Verificar a ${t.librador} en el BCRA`}
+                          style={{ border: "1px solid #1F3864", background: "white", color: NAVY, borderRadius: 4, padding: "4px 8px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+                        >
+                          Verificar
                         </button>
                       )}
                       <button onClick={() => startEdit(t)} title="Editar" style={{ border: "none", background: "transparent", color: NAVY, cursor: "pointer" }}><Pencil size={13} /></button>

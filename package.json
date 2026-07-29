@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "verificar:calendario": "node verificacion/calendario.mjs",
-    "verificar:feriados": "node verificacion/feriados.mts"
+    "verificar:feriados": "node verificacion/feriados.mts",
+    "verificar:cuit": "node verificacion/cuit.mts",
+    "verificar:bcra": "node verificacion/bcra.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
