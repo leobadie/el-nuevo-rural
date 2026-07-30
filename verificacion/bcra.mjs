@@ -410,6 +410,61 @@ function checkApi(id, desc, ok, detail) {
     `input="${valorPrecargado}" resultado=${precargaOk}`);
   await page2.close();
 
+  // ---------- R1-R4: quién está detrás del CUIT ----------
+  const caso = (cuit) => `[data-testid="caso-${cuit}"]`;
+  const textoCaso = async (cuit) =>
+    (await page.locator(caso(cuit)).textContent().catch(() => "")).trim();
+
+  const conPersonas = await textoCaso("30707512292");
+  check("R1.1", "Muestra tipo societario, domicilio y actividad de la sociedad",
+    /SOCIEDAD ANONIMA/.test(conPersonas) && /CAPITAL FEDERAL/.test(conPersonas) &&
+      /COMBUSTIBLES/.test(conPersonas),
+    (await page.locator(`${caso("30707512292")} [data-testid="datos-sociedad"]`).textContent().catch(() => "")).slice(0, 90));
+  check("R1.2", "Muestra la antigüedad en años",
+    /\d+ años de antigüedad/.test(conPersonas),
+    (conPersonas.match(/\d+ años de antigüedad/) || ["no aparece"])[0]);
+  check("R1.4", "Dice de qué fuente y de qué fecha es el dato",
+    /Registro Nacional de Sociedades/.test(conPersonas) && /dato de \w+ de \d{4}/.test(conPersonas),
+    (conPersonas.match(/dato de [\w ]+ de \d{4}/) || ["no aparece"])[0]);
+
+  const roles = await page.locator(`${caso("30707512292")} [data-testid="tabla-personas"] tbody tr`).evaluateAll(
+    (filas) => filas.map((f) => f.getAttribute("data-rol")),
+  );
+  check("R2.1", "Lista las personas con su rol", roles.length === 4, `${roles.length} personas`);
+  check("R2.2", "Socios primero, después autoridades, después representantes",
+    roles.join("") === "SSAR", roles.join(""));
+  check("R3.2", "Con personas, igual aclara qué no es público (accionistas)",
+    /accionistas/i.test(
+      (await page.locator(`${caso("30707512292")} [data-testid="aclaracion-personas"]`).textContent().catch(() => "")) || "",
+    ), "");
+
+  const cordoba = await textoCaso("30712345670");
+  const motivoCordoba = await page.locator(`${caso("30712345670")} [data-testid="sin-personas"]`)
+    .getAttribute("data-motivo").catch(() => null);
+  check("R1.3", "Una sociedad del interior igual muestra sus datos de empresa",
+    /CEREALERA DEL CENTRO/.test(cordoba) && /RIO CUARTO/.test(cordoba), "");
+  check("R3.1a", "Sin personas por ser de otra provincia, lo dice con ese motivo",
+    motivoCordoba === "sociedadDeOtraProvincia", `motivo=${motivoCordoba}`);
+  check("R3.1b", "Y aclara que eso NO significa que no tenga socios",
+    /no significa que la sociedad no tenga socios/i.test(cordoba) && /CORDOBA/.test(cordoba),
+    (cordoba.match(/No hay personas cargadas[^.]*\./) || ["no aparece"])[0].slice(0, 95));
+  check("R3.3", "Nunca presenta la ausencia como un resultado limpio",
+    !/sin socios|no tiene socios|ningún socio/i.test(cordoba), "");
+
+  const noFigura = await textoCaso("30999999994");
+  check("R1.3b", "Un CUIT que no figura lo dice sin romper nada",
+    /no figura en el Registro Nacional de Sociedades/i.test(noFigura) &&
+      /no quiere decir que la empresa no exista/i.test(noFigura), "");
+
+  const persona = await textoCaso("20123456783");
+  const motivoPersona = await page.locator(`${caso("20123456783")} [data-testid="sin-personas"]`)
+    .getAttribute("data-motivo").catch(() => null);
+  check("R4.1", "Con un CUIL de persona física explica que no hay padrón público",
+    motivoPersona === "esPersonaFisica" && /no hay padrón público de personas físicas/i.test(persona),
+    `motivo=${motivoPersona}`);
+
+  await page.screenshot({ path: path.join(OUT, "08-quien-esta-detras.png"), fullPage: true });
+
   // ---------- V9.2: sin scroll horizontal ----------
   const dsk = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
   check("V9.2a", "Desktop 1280px: la página no scrollea en horizontal", dsk.sw <= dsk.cw + 1, JSON.stringify(dsk));

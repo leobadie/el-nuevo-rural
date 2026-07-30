@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fmtDate, fmtMoney } from "@/lib/cheques/calculos";
@@ -24,24 +24,27 @@ import {
   type Resultado,
 } from "@/lib/bcra/api";
 import { COLORES_DENUNCIA, evaluarDenuncia } from "@/lib/bcra/denuncias";
+import { consultarRegistroSociedad, type ResultadoRegistro } from "@/lib/registros/consulta";
+import BloqueQuienEs from "./BloqueQuienEs";
 
 interface Consulta {
   cuit: string;
   deudas: Resultado<Deudas>;
   rechazados: Resultado<ChequesRechazados>;
   historicas: Resultado<Deudas>;
+  registro: ResultadoRegistro;
 }
 
-/** Una línea legible por denuncia, con respaldo genérico si la API cambia los campos. */
+/** Una lÃ­nea legible por denuncia, con respaldo genÃ©rico si la API cambia los campos. */
 function textoDenuncia(d: DenunciaCheque): string {
   const partes: string[] = [];
   if (d.numeroCuenta !== undefined) partes.push(`cuenta ${d.numeroCuenta}`);
   if (d.sucursal !== undefined) partes.push(`sucursal ${d.sucursal}`);
   if (typeof d.causal === "string") partes.push(d.causal);
-  if (partes.length > 0) return partes.join(" · ");
+  if (partes.length > 0) return partes.join(" Â· ");
   return Object.entries(d)
     .map(([k, v]) => `${k}: ${String(v)}`)
-    .join(" · ");
+    .join(" Â· ");
 }
 
 const panel = {
@@ -65,6 +68,7 @@ const boton = {
   cursor: "pointer",
 } as const;
 
+
 function ChipSituacion({ nivel }: { nivel: number }) {
   const s = situacionBcra(nivel);
   return (
@@ -81,19 +85,19 @@ function ChipSituacion({ nivel }: { nivel: number }) {
         whiteSpace: "nowrap",
       }}
     >
-      {s.nivel > 0 ? `${s.nivel} · ${s.label}` : s.label}
+      {s.nivel > 0 ? `${s.nivel} Â· ${s.label}` : s.label}
     </span>
   );
 }
 
-/** Marcas booleanas de la API: solo se muestran las que están activas. */
+/** Marcas booleanas de la API: solo se muestran las que estÃ¡n activas. */
 function Marcas({
   marcas,
 }: {
   marcas: { etiqueta: string; activa: boolean }[];
 }) {
   const activas = marcas.filter((m) => m.activa);
-  if (activas.length === 0) return <span style={{ color: "#999" }}>—</span>;
+  if (activas.length === 0) return <span style={{ color: "#999" }}>â€”</span>;
   return (
     <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
       {activas.map((m) => (
@@ -123,8 +127,8 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
   const [errorCheque, setErrorCheque] = useState("");
   const [chequeConsultado, setChequeConsultado] = useState<ChequeDenunciado | null>(null);
 
-  /* El catálogo de bancos se carga cuando hace falta (al consultar un CUIT o al abrir el
-     panel de cheques denunciados), no al montar: así no se gasta una consulta si no se usa. */
+  /* El catÃ¡logo de bancos se carga cuando hace falta (al consultar un CUIT o al abrir el
+     panel de cheques denunciados), no al montar: asÃ­ no se gasta una consulta si no se usa. */
   async function cargarEntidades(): Promise<EntidadBancaria[]> {
     if (entidades.length > 0) return entidades;
     const r = await consultarEntidades();
@@ -137,7 +141,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
       return ordenadas;
     }
     setErrorEntidades(
-      r.estado === "error" ? r.mensaje : "El BCRA no devolvió la lista de bancos.",
+      r.estado === "error" ? r.mensaje : "El BCRA no devolviÃ³ la lista de bancos.",
     );
     return [];
   }
@@ -153,14 +157,16 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
     setErrorCuit("");
     setConsultando(true);
     try {
-      // Las tres consultas van en paralelo y cada una guarda su propio resultado:
-      // si una falla, las otras se muestran igual.
-      const [deudas, rechazados, historicas] = await Promise.all([
+      // Las consultas van en paralelo y cada una guarda su propio resultado: si una falla,
+      // las otras se muestran igual. El registro de sociedades sale de la base propia, no
+      // del BCRA, pero se pide junto para no encadenar esperas.
+      const [deudas, rechazados, historicas, registro] = await Promise.all([
         consultarDeudas(v.cuit),
         consultarChequesRechazados(v.cuit),
         consultarDeudasHistoricas(v.cuit),
+        consultarRegistroSociedad(v.cuit),
       ]);
-      setConsulta({ cuit: v.cuit, deudas, rechazados, historicas });
+      setConsulta({ cuit: v.cuit, deudas, rechazados, historicas, registro });
       void cargarEntidades(); // para poder nombrar los bancos de los rechazos
     } finally {
       setConsultando(false);
@@ -171,18 +177,18 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
     const codigo = parseInt(bancoSel, 10);
     const numero = parseInt(nroCheque.replace(/\D/g, ""), 10);
     /* Cualquier corte deja la pantalla sin veredicto: si quedara el de la consulta anterior,
-       se leería como la respuesta a lo que está escrito ahora, que es otro cheque. */
+       se leerÃ­a como la respuesta a lo que estÃ¡ escrito ahora, que es otro cheque. */
     const cortar = (motivo: string) => {
       setErrorCheque(motivo);
       setChequeConsultado(null);
     };
-    if (!codigo) return cortar("Elegí el banco del cheque.");
-    if (!numero) return cortar("Escribí el número del cheque.");
-    /* Sin la cuenta la respuesta no serviría: diría si alguna chequera del banco denunció ese
-       número, que no es la pregunta. Se exige antes de gastar la consulta. */
+    if (!codigo) return cortar("ElegÃ­ el banco del cheque.");
+    if (!numero) return cortar("EscribÃ­ el nÃºmero del cheque.");
+    /* Sin la cuenta la respuesta no servirÃ­a: dirÃ­a si alguna chequera del banco denunciÃ³ ese
+       nÃºmero, que no es la pregunta. Se exige antes de gastar la consulta. */
     if (!nroCuenta.replace(/\D/g, "")) {
       return cortar(
-        "Escribí el número de cuenta del cheque: está impreso abajo, en la línea de números. " +
+        "EscribÃ­ el nÃºmero de cuenta del cheque: estÃ¡ impreso abajo, en la lÃ­nea de nÃºmeros. " +
           "Sin la cuenta el BCRA no puede decir si es este cheque el denunciado.",
       );
     }
@@ -193,7 +199,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
       const r = await consultarChequeDenunciado(codigo, numero);
       if (r.estado === "ok") setChequeConsultado(r.datos);
       else if (r.estado === "sinDatos")
-        setErrorCheque("El BCRA no tiene información de ese cheque.");
+        setErrorCheque("El BCRA no tiene informaciÃ³n de ese cheque.");
       else setErrorCheque(r.mensaje);
     } finally {
       setVerificandoCheque(false);
@@ -211,7 +217,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cuitInicial]);
 
-  /* El filtro por cuenta es local: la API ya devolvió todas las denuncias de ese número, así
+  /* El filtro por cuenta es local: la API ya devolviÃ³ todas las denuncias de ese nÃºmero, asÃ­
      que corregir la cuenta recalcula el veredicto sin gastar otra consulta. */
   const veredictoDenuncia = useMemo(
     () => (chequeConsultado ? evaluarDenuncia(chequeConsultado, nroCuenta) : null),
@@ -262,7 +268,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
             disabled={consultando}
             style={{ ...boton, opacity: consultando ? 0.6 : 1, cursor: consultando ? "wait" : "pointer" }}
           >
-            {consultando ? "Consultando…" : "Consultar"}
+            {consultando ? "Consultandoâ€¦" : "Consultar"}
           </button>
         </div>
         {errorCuit && (
@@ -271,10 +277,10 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
           </div>
         )}
         <div style={{ fontSize: 11, color: "#777", marginTop: 10, lineHeight: 1.5 }}>
-          Datos públicos del BCRA. La Central de Deudores se actualiza <strong>una vez por
-          mes</strong>, así que puede tener uno o dos meses de atraso; los cheques denunciados
-          se actualizan todos los días. Los importes los informa el BCRA en miles de pesos y
-          acá se muestran ya convertidos.
+          Datos pÃºblicos del BCRA. La Central de Deudores se actualiza <strong>una vez por
+          mes</strong>, asÃ­ que puede tener uno o dos meses de atraso; los cheques denunciados
+          se actualizan todos los dÃ­as. Los importes los informa el BCRA en miles de pesos y
+          acÃ¡ se muestran ya convertidos.
         </div>
       </div>
 
@@ -288,11 +294,11 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                   {denominacion ?? "Sin datos en el BCRA"}
                 </div>
                 <div style={{ fontSize: 12, color: "#555", marginTop: 2 }}>
-                  {formatearCuit(consulta.cuit)} ·{" "}
+                  {formatearCuit(consulta.cuit)} Â·{" "}
                   {tipoDeCuit(consulta.cuit) === "empresa"
                     ? "empresa"
                     : tipoDeCuit(consulta.cuit) === "persona"
-                      ? "persona física"
+                      ? "persona fÃ­sica"
                       : "otro tipo"}
                 </div>
               </div>
@@ -316,9 +322,12 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
             </div>
           </div>
 
+          {/* QuiÃ©n estÃ¡ detrÃ¡s del CUIT */}
+          <BloqueQuienEs cuit={consulta.cuit} registro={consulta.registro} />
+
           {/* Deudas */}
           <div style={panel}>
-            <div style={tituloPanel}>Situación en el sistema financiero</div>
+            <div style={tituloPanel}>SituaciÃ³n en el sistema financiero</div>
             {consulta.deudas.estado === "error" && (
               <div data-testid="error-deudas" style={{ fontSize: 12, color: "#922B21" }}>
                 {consulta.deudas.mensaje}
@@ -333,7 +342,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
               <>
                 <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 12, fontSize: 12, color: "#555" }}>
                   <span>
-                    Período informado:{" "}
+                    PerÃ­odo informado:{" "}
                     <strong data-testid="periodo">{nombrePeriodo(resumen.periodo)}</strong>
                   </span>
                   <span>
@@ -343,7 +352,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                     Entidades: <strong>{resumen.cantidadEntidades}</strong>
                   </span>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    Peor situación: <ChipSituacion nivel={resumen.peorSituacion} />
+                    Peor situaciÃ³n: <ChipSituacion nivel={resumen.peorSituacion} />
                   </span>
                 </div>
                 {resumen.irregularMiles > 0 && (
@@ -351,7 +360,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                     data-testid="deuda-irregular"
                     style={{ fontSize: 12, color: "#7D6608", background: "#FCF3CF", padding: "8px 12px", borderRadius: 6, marginBottom: 12 }}
                   >
-                    En situación irregular (3 o peor):{" "}
+                    En situaciÃ³n irregular (3 o peor):{" "}
                     <strong>{fmtMoney(pesosDesdeMiles(resumen.irregularMiles))}</strong> en{" "}
                     {resumen.entidadesIrregulares.length}{" "}
                     {resumen.entidadesIrregulares.length === 1 ? "entidad" : "entidades"}, o sea el{" "}
@@ -361,7 +370,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                         : Math.round(resumen.proporcionIrregular * 100)}
                       %
                     </strong>{" "}
-                    de su deuda total. El resto está en situación normal.
+                    de su deuda total. El resto estÃ¡ en situaciÃ³n normal.
                   </div>
                 )}
                 <div style={{ fontSize: 11, color: "#777", marginBottom: 8 }}>
@@ -372,9 +381,9 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                     <thead>
                       <tr>
                         <th style={thStyle}>Entidad</th>
-                        <th style={thStyle}>Situación</th>
+                        <th style={thStyle}>SituaciÃ³n</th>
                         <th style={thStyle}>Monto</th>
-                        <th style={thStyle}>Días de atraso</th>
+                        <th style={thStyle}>DÃ­as de atraso</th>
                         <th style={thStyle}>Marcas</th>
                       </tr>
                     </thead>
@@ -389,11 +398,11 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                             <Marcas
                               marcas={[
                                 { etiqueta: "refinanciado", activa: e.refinanciaciones },
-                                { etiqueta: "recategorización obligatoria", activa: e.recategorizacionOblig },
-                                { etiqueta: "situación jurídica", activa: e.situacionJuridica },
+                                { etiqueta: "recategorizaciÃ³n obligatoria", activa: e.recategorizacionOblig },
+                                { etiqueta: "situaciÃ³n jurÃ­dica", activa: e.situacionJuridica },
                                 { etiqueta: "proceso judicial", activa: e.procesoJud },
-                                { etiqueta: "en revisión", activa: e.enRevision },
-                                { etiqueta: "irrecuperable por disp. técnica", activa: e.irrecDisposicionTecnica },
+                                { etiqueta: "en revisiÃ³n", activa: e.enRevision },
+                                { etiqueta: "irrecuperable por disp. tÃ©cnica", activa: e.irrecDisposicionTecnica },
                               ]}
                             />
                           </td>
@@ -429,7 +438,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                     Monto total: <strong>{fmtMoney(pesosDesdeMiles(rechazos.totalMiles))}</strong>
                   </span>
                   <span>
-                    Sin pagar después del rechazo: <strong>{rechazos.sinPagar}</strong>
+                    Sin pagar despuÃ©s del rechazo: <strong>{rechazos.sinPagar}</strong>
                   </span>
                 </div>
                 {(consulta.rechazados.datos.causales ?? []).map((causal, ci) => (
@@ -446,7 +455,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                           <table style={{ width: "100%", borderCollapse: "collapse" }}>
                             <thead>
                               <tr>
-                                <th style={thStyle}>N° cheque</th>
+                                <th style={thStyle}>NÂ° cheque</th>
                                 <th style={thStyle}>Rechazado el</th>
                                 <th style={thStyle}>Monto</th>
                                 <th style={thStyle}>Pagado el</th>
@@ -464,7 +473,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                                     {d.fechaPago ? fmtDate(d.fechaPago) : "Sin pagar"}
                                   </td>
                                   <td style={tdStyle}>
-                                    {d.estadoMulta || "—"}
+                                    {d.estadoMulta || "â€”"}
                                     {d.fechaPagoMulta && ` (${fmtDate(d.fechaPagoMulta)})`}
                                   </td>
                                   <td style={tdStyle}>
@@ -472,7 +481,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                                       marcas={[
                                         { etiqueta: "cuenta personal", activa: d.ctaPersonal },
                                         { etiqueta: "proceso judicial", activa: d.procesoJud },
-                                        { etiqueta: "en revisión", activa: d.enRevision },
+                                        { etiqueta: "en revisiÃ³n", activa: d.enRevision },
                                       ]}
                                     />
                                   </td>
@@ -489,21 +498,21 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
             )}
           </div>
 
-          {/* Evolución */}
+          {/* EvoluciÃ³n */}
           <div style={panel}>
-            <div style={tituloPanel}>Cómo viene mes a mes</div>
+            <div style={tituloPanel}>CÃ³mo viene mes a mes</div>
             {consulta.historicas.estado === "ok" ? (
               (() => {
                 const evo = evolucionPorPeriodo(consulta.historicas.datos).slice(0, 12);
                 if (evo.length === 0) {
-                  return <div style={{ fontSize: 12, color: "#555" }}>Sin períodos informados.</div>;
+                  return <div style={{ fontSize: 12, color: "#555" }}>Sin perÃ­odos informados.</div>;
                 }
                 return (
                   <>
                     <div style={{ fontSize: 11, color: "#777", marginBottom: 8 }}>
-                      El chip es la <strong>peor</strong> situación del mes. Debajo, la deuda total
-                      y cuánta de esa plata estaba en situación irregular: un mismo atraso chico se
-                      repite mes a mes y sin el monto parece que todo el período estuvo mal.
+                      El chip es la <strong>peor</strong> situaciÃ³n del mes. Debajo, la deuda total
+                      y cuÃ¡nta de esa plata estaba en situaciÃ³n irregular: un mismo atraso chico se
+                      repite mes a mes y sin el monto parece que todo el perÃ­odo estuvo mal.
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }} data-testid="evolucion">
                       {evo.map((p) => (
@@ -540,7 +549,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
               <div data-testid="sin-historico" style={{ fontSize: 12, color: "#555" }}>
                 {consulta.historicas.estado === "error"
                   ? consulta.historicas.mensaje
-                  : "El BCRA no informa histórico para este CUIT."}
+                  : "El BCRA no informa histÃ³rico para este CUIT."}
               </div>
             )}
           </div>
@@ -556,13 +565,13 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
           }}
         >
           <summary style={{ fontSize: 12, fontWeight: 700, color: NAVY, cursor: "pointer" }}>
-            ¿Este cheque está denunciado? (robo o extravío)
+            Â¿Este cheque estÃ¡ denunciado? (robo o extravÃ­o)
           </summary>
           <div style={{ fontSize: 11, color: "#777", margin: "10px 0" }}>
-            Este dato el BCRA lo actualiza todos los días. Cargá los tres datos del cheque que
-            tenés en la mano —banco, número y <strong>cuenta</strong>, los tres impresos en él—
-            y el resultado dice si <em>ese</em> cheque está denunciado. La cuenta hace falta
-            porque el mismo número de cheque existe en cada chequera del banco.
+            Este dato el BCRA lo actualiza todos los dÃ­as. CargÃ¡ los tres datos del cheque que
+            tenÃ©s en la mano â€”banco, nÃºmero y <strong>cuenta</strong>, los tres impresos en Ã©lâ€”
+            y el resultado dice si <em>ese</em> cheque estÃ¡ denunciado. La cuenta hace falta
+            porque el mismo nÃºmero de cheque existe en cada chequera del banco.
           </div>
           {errorEntidades && (
             <div style={{ fontSize: 12, color: "#922B21", marginBottom: 8 }}>{errorEntidades}</div>
@@ -580,7 +589,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                 style={{ ...inputStyle, marginTop: 4 }}
               >
                 <option value="">
-                  {entidades.length ? "Elegí el banco" : "Cargando bancos…"}
+                  {entidades.length ? "ElegÃ­ el banco" : "Cargando bancosâ€¦"}
                 </option>
                 {entidades.map((e) => (
                   <option key={e.codigoEntidad} value={e.codigoEntidad}>
@@ -590,7 +599,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
               </select>
             </label>
             <label style={{ fontSize: 12, color: "#555", flex: "1 1 160px" }}>
-              N° de cheque
+              NÂ° de cheque
               <input
                 type="text"
                 inputMode="numeric"
@@ -605,7 +614,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
               />
             </label>
             <label style={{ fontSize: 12, color: "#555", flex: "1 1 180px" }}>
-              N° de cuenta del cheque
+              NÂ° de cuenta del cheque
               <span style={{ color: "#922B21" }}> *</span>
               <input
                 type="text"
@@ -623,7 +632,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
               disabled={verificandoCheque}
               style={{ ...boton, opacity: verificandoCheque ? 0.6 : 1 }}
             >
-              {verificandoCheque ? "Verificando…" : "Verificar"}
+              {verificandoCheque ? "Verificandoâ€¦" : "Verificar"}
             </button>
           </div>
           {errorCheque && (
@@ -648,13 +657,13 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                 data-testid="titulo-denuncia"
                 style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.2 }}
               >
-                {veredictoDenuncia.nivel === "denunciado" ? "✕" : "✓"} {veredictoDenuncia.titulo}
+                {veredictoDenuncia.nivel === "denunciado" ? "âœ•" : "âœ“"} {veredictoDenuncia.titulo}
               </div>
               <div style={{ fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
                 {veredictoDenuncia.detalle}
               </div>
               {/* Solo las denuncias que pueden ser este cheque; el resto no aporta a la
-                  decisión y, siendo hasta 229, taparía el veredicto. */}
+                  decisiÃ³n y, siendo hasta 229, taparÃ­a el veredicto. */}
               {veredictoDenuncia.coincidencias.length > 0 && (
                 <div data-testid="lista-denuncias" style={{ fontSize: 11, marginTop: 8 }}>
                   {veredictoDenuncia.coincidencias.map((d, i) => (
@@ -665,8 +674,8 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                 </div>
               )}
               <div style={{ fontSize: 11, marginTop: 8, opacity: 0.85 }}>
-                Cheque N° {chequeConsultado.numeroCheque} · cuenta {nroCuenta.trim()} ·{" "}
-                {chequeConsultado.denominacionEntidad} · denuncias del BCRA al{" "}
+                Cheque NÂ° {chequeConsultado.numeroCheque} Â· cuenta {nroCuenta.trim()} Â·{" "}
+                {chequeConsultado.denominacionEntidad} Â· denuncias del BCRA al{" "}
                 {fmtDate(chequeConsultado.fechaProcesamiento)}
               </div>
               {veredictoDenuncia.nota && (

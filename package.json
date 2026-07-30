@@ -12,6 +12,8 @@
     "verificar:cuit": "node verificacion/cuit.mts",
     "verificar:denuncias": "node verificacion/denuncias.mts",
     "verificar:limite": "node verificacion/limite.mts",
+    "verificar:registros": "node verificacion/registros.mts",
+    "importar:registros": "node scripts/importar-registros.mjs",
     "verificar:bcra": "node verificacion/bcra.mjs"
   },
   "dependencies": {
