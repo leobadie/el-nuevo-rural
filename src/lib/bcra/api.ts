@@ -90,25 +90,95 @@ export interface EntidadBancaria {
   denominacion: string;
 }
 
+/**
+ * Una denuncia concreta: una cuenta del banco que denunció su cheque con ese número.
+ * Los campos son los que devuelve la API hoy; se declaran opcionales porque no están
+ * documentados y el detalle se muestra igual si algún día viene otra cosa.
+ */
+export interface DenunciaCheque {
+  sucursal?: number;
+  numeroCuenta?: number;
+  causal?: string;
+  [k: string]: unknown;
+}
+
 export interface ChequeDenunciado {
   numeroCheque: number;
+  /**
+   * OJO: no significa "el cheque que consultaste está denunciado". La API busca el número
+   * en TODAS las cuentas del banco, así que esto es "alguien, en alguna cuenta de este
+   * banco, denunció su cheque con este número". El cheque 1 del Nación da 229 denuncias de
+   * 229 chequeras distintas. Para saber si es *este* cheque hay que comparar la cuenta:
+   * ver evaluarDenuncia().
+   */
   denunciado: boolean;
   fechaProcesamiento: string;
   denominacionEntidad: string;
-  /** La API no documenta el contenido; se muestra tal como venga. */
-  detalles: Array<Record<string, unknown>>;
+  detalles: DenunciaCheque[];
+}
+
+// ---------- Límite de consultas ----------
+
+/*
+ * El BCRA corta a las 10 consultas por minuto en cada endpoint y responde 429. Medido contra
+ * la API real: la consulta 11 da 429, y volviendo a intentar cada 5 segundos siguió bloqueado
+ * más de 2 minutos, mientras que esperando 70 segundos sin tocar nada se liberó al primer
+ * intento. O sea: cada intento durante el bloqueo lo sostiene, así que reintentar empeora.
+ *
+ * Peor todavía, el 429 viene SIN el header Access-Control-Allow-Origin, así que el navegador
+ * no puede leer la respuesta: el fetch falla igual que si se hubiera caído internet. Sin este
+ * registro, la app diría "revisá tu conexión" cuando la conexión está perfecta.
+ *
+ * Por eso se lleva la cuenta del lado del cliente: para nombrar bien el error y, sobre todo,
+ * para no seguir golpeando y estirar el bloqueo.
+ */
+const LIMITE_POR_MINUTO = 10;
+const VENTANA_MS = 60_000;
+const MENSAJE_LIMITE =
+  "El BCRA permite 10 consultas por minuto y llegaste al límite. Esperá un minuto sin " +
+  "consultar y volvé a intentar: si insistís antes, el bloqueo se mantiene.";
+
+/** Timestamps de las últimas llamadas, por endpoint (el límite es de cada uno por separado). */
+const llamadas = new Map<string, number[]>();
+
+/** El endpoint sin el CUIT ni el número de cheque: el límite aplica a la ruta, no al dato. */
+function clave(ruta: string): string {
+  return ruta.replace(/\/\d+(?=\/|$)/g, "/");
+}
+
+function recientes(k: string): number[] {
+  const desde = Date.now() - VENTANA_MS;
+  const previas = (llamadas.get(k) ?? []).filter((t) => t > desde);
+  llamadas.set(k, previas);
+  return previas;
+}
+
+/** Segundos que faltan para poder volver a consultar ese endpoint, 0 si se puede ya. */
+export function esperaSugerida(ruta: string): number {
+  const previas = recientes(clave(ruta));
+  if (previas.length < LIMITE_POR_MINUTO) return 0;
+  return Math.ceil((previas[0] + VENTANA_MS - Date.now()) / 1000);
 }
 
 // ---------- Núcleo ----------
 
 function mensajeDeError(status: number): string {
   if (status === 400) return "El BCRA rechazó la consulta: revisá el número ingresado.";
+  if (status === 429) return MENSAJE_LIMITE;
   if (status === 500) return "El BCRA tuvo un error interno. Probá de nuevo en un rato.";
   if (status === 503) return "El servicio del BCRA no está disponible en este momento.";
   return `El BCRA respondió con un error (${status}).`;
 }
 
 async function consultar<T>(ruta: string): Promise<Resultado<T>> {
+  const k = clave(ruta);
+  const previas = recientes(k);
+  // Si ya se llegó al límite, no se llama: hacerlo sostendría el bloqueo un minuto más.
+  if (previas.length >= LIMITE_POR_MINUTO) {
+    return { estado: "error", mensaje: MENSAJE_LIMITE };
+  }
+  llamadas.set(k, [...previas, Date.now()]);
+
   try {
     const resp = await fetch(`${BASE}${ruta}`, {
       headers: { Accept: "application/json" },
@@ -126,6 +196,12 @@ async function consultar<T>(ruta: string): Promise<Resultado<T>> {
         estado: "error",
         mensaje: "El BCRA tardó demasiado en responder. Probá de nuevo.",
       };
+    }
+    /* Un 429 llega acá disfrazado de fallo de red, porque sin el header CORS el navegador no
+       deja leer la respuesta. Si venimos de varias consultas seguidas, el límite es la
+       explicación mucho más probable que una caída de internet. */
+    if (previas.length >= LIMITE_POR_MINUTO - 3) {
+      return { estado: "error", mensaje: MENSAJE_LIMITE };
     }
     return {
       estado: "error",

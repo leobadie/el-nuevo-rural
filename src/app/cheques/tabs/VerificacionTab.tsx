@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fmtDate, fmtMoney } from "@/lib/cheques/calculos";
 import { NAVY, inputStyle, thStyle, tdStyle } from "@/lib/cheques/estilos";
 import { formatearCuit, tipoDeCuit, validarCuit } from "@/lib/bcra/cuit";
@@ -18,16 +18,30 @@ import {
   resumirUltimoPeriodo,
   type ChequeDenunciado,
   type ChequesRechazados,
+  type DenunciaCheque,
   type Deudas,
   type EntidadBancaria,
   type Resultado,
 } from "@/lib/bcra/api";
+import { COLORES_DENUNCIA, evaluarDenuncia } from "@/lib/bcra/denuncias";
 
 interface Consulta {
   cuit: string;
   deudas: Resultado<Deudas>;
   rechazados: Resultado<ChequesRechazados>;
   historicas: Resultado<Deudas>;
+}
+
+/** Una línea legible por denuncia, con respaldo genérico si la API cambia los campos. */
+function textoDenuncia(d: DenunciaCheque): string {
+  const partes: string[] = [];
+  if (d.numeroCuenta !== undefined) partes.push(`cuenta ${d.numeroCuenta}`);
+  if (d.sucursal !== undefined) partes.push(`sucursal ${d.sucursal}`);
+  if (typeof d.causal === "string") partes.push(d.causal);
+  if (partes.length > 0) return partes.join(" · ");
+  return Object.entries(d)
+    .map(([k, v]) => `${k}: ${String(v)}`)
+    .join(" · ");
 }
 
 const panel = {
@@ -104,6 +118,7 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
   const [errorEntidades, setErrorEntidades] = useState("");
   const [bancoSel, setBancoSel] = useState("");
   const [nroCheque, setNroCheque] = useState("");
+  const [nroCuenta, setNroCuenta] = useState("");
   const [verificandoCheque, setVerificandoCheque] = useState(false);
   const [errorCheque, setErrorCheque] = useState("");
   const [chequeConsultado, setChequeConsultado] = useState<ChequeDenunciado | null>(null);
@@ -155,13 +170,21 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
   async function verificarCheque() {
     const codigo = parseInt(bancoSel, 10);
     const numero = parseInt(nroCheque.replace(/\D/g, ""), 10);
-    if (!codigo) {
-      setErrorCheque("Elegí el banco del cheque.");
-      return;
-    }
-    if (!numero) {
-      setErrorCheque("Escribí el número del cheque.");
-      return;
+    /* Cualquier corte deja la pantalla sin veredicto: si quedara el de la consulta anterior,
+       se leería como la respuesta a lo que está escrito ahora, que es otro cheque. */
+    const cortar = (motivo: string) => {
+      setErrorCheque(motivo);
+      setChequeConsultado(null);
+    };
+    if (!codigo) return cortar("Elegí el banco del cheque.");
+    if (!numero) return cortar("Escribí el número del cheque.");
+    /* Sin la cuenta la respuesta no serviría: diría si alguna chequera del banco denunció ese
+       número, que no es la pregunta. Se exige antes de gastar la consulta. */
+    if (!nroCuenta.replace(/\D/g, "")) {
+      return cortar(
+        "Escribí el número de cuenta del cheque: está impreso abajo, en la línea de números. " +
+          "Sin la cuenta el BCRA no puede decir si es este cheque el denunciado.",
+      );
     }
     setErrorCheque("");
     setVerificandoCheque(true);
@@ -187,6 +210,13 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
     void consultarCuit(cuitInicial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cuitInicial]);
+
+  /* El filtro por cuenta es local: la API ya devolvió todas las denuncias de ese número, así
+     que corregir la cuenta recalcula el veredicto sin gastar otra consulta. */
+  const veredictoDenuncia = useMemo(
+    () => (chequeConsultado ? evaluarDenuncia(chequeConsultado, nroCuenta) : null),
+    [chequeConsultado, nroCuenta],
+  );
 
   function nombreEntidad(codigo: number): string {
     return entidades.find((e) => e.codigoEntidad === codigo)?.denominacion ?? `Entidad ${codigo}`;
@@ -529,8 +559,10 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
             ¿Este cheque está denunciado? (robo o extravío)
           </summary>
           <div style={{ fontSize: 11, color: "#777", margin: "10px 0" }}>
-            Este dato el BCRA lo actualiza todos los días. Sirve para chequear un cheque
-            puntual antes de aceptarlo.
+            Este dato el BCRA lo actualiza todos los días. Cargá los tres datos del cheque que
+            tenés en la mano —banco, número y <strong>cuenta</strong>, los tres impresos en él—
+            y el resultado dice si <em>ese</em> cheque está denunciado. La cuenta hace falta
+            porque el mismo número de cheque existe en cada chequera del banco.
           </div>
           {errorEntidades && (
             <div style={{ fontSize: 12, color: "#922B21", marginBottom: 8 }}>{errorEntidades}</div>
@@ -541,7 +573,10 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
               <select
                 data-testid="select-banco"
                 value={bancoSel}
-                onChange={(e) => setBancoSel(e.target.value)}
+                onChange={(e) => {
+                  setBancoSel(e.target.value);
+                  setChequeConsultado(null); // el veredicto era de otro cheque
+                }}
                 style={{ ...inputStyle, marginTop: 4 }}
               >
                 <option value="">
@@ -562,7 +597,23 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
                 data-testid="input-nro-cheque"
                 value={nroCheque}
                 placeholder="12345678"
-                onChange={(e) => setNroCheque(e.target.value)}
+                onChange={(e) => {
+                  setNroCheque(e.target.value);
+                  setChequeConsultado(null); // hay que volver a consultar: es otro cheque
+                }}
+                style={{ ...inputStyle, marginTop: 4 }}
+              />
+            </label>
+            <label style={{ fontSize: 12, color: "#555", flex: "1 1 180px" }}>
+              N° de cuenta del cheque
+              <span style={{ color: "#922B21" }}> *</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                data-testid="input-nro-cuenta"
+                value={nroCuenta}
+                placeholder="890036218"
+                onChange={(e) => setNroCuenta(e.target.value)}
                 style={{ ...inputStyle, marginTop: 4 }}
               />
             </label>
@@ -580,36 +631,47 @@ export default function VerificacionTab({ cuitInicial = "" }: { cuitInicial?: st
               {errorCheque}
             </div>
           )}
-          {chequeConsultado && (
+          {chequeConsultado && veredictoDenuncia && (
             <div
               data-testid="resultado-cheque"
-              data-denunciado={chequeConsultado.denunciado ? "1" : "0"}
+              data-nivel={veredictoDenuncia.nivel}
+              data-denunciado={veredictoDenuncia.nivel === "denunciado" ? "1" : "0"}
               style={{
                 marginTop: 12,
-                background: chequeConsultado.denunciado ? "#FADBD8" : "#D5F5E3",
-                color: chequeConsultado.denunciado ? "#922B21" : "#145A32",
+                background: COLORES_DENUNCIA[veredictoDenuncia.nivel].fondo,
+                color: COLORES_DENUNCIA[veredictoDenuncia.nivel].texto,
                 borderRadius: 8,
                 padding: "10px 12px",
               }}
             >
-              <div style={{ fontSize: 13, fontWeight: 800 }}>
-                {chequeConsultado.denunciado
-                  ? "DENUNCIADO: no lo aceptes"
-                  : "No figura denunciado"}
+              <div
+                data-testid="titulo-denuncia"
+                style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.2 }}
+              >
+                {veredictoDenuncia.nivel === "denunciado" ? "✕" : "✓"} {veredictoDenuncia.titulo}
               </div>
-              <div style={{ fontSize: 11, marginTop: 4 }}>
-                Cheque {chequeConsultado.numeroCheque} · {chequeConsultado.denominacionEntidad} ·
-                dato del {fmtDate(chequeConsultado.fechaProcesamiento)}
+              <div style={{ fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
+                {veredictoDenuncia.detalle}
               </div>
-              {chequeConsultado.detalles.length > 0 && (
-                <div style={{ fontSize: 11, marginTop: 6 }}>
-                  {chequeConsultado.detalles.map((d, i) => (
-                    <div key={i}>
-                      {Object.entries(d)
-                        .map(([k, v]) => `${k}: ${String(v)}`)
-                        .join(" · ")}
+              {/* Solo las denuncias que pueden ser este cheque; el resto no aporta a la
+                  decisión y, siendo hasta 229, taparía el veredicto. */}
+              {veredictoDenuncia.coincidencias.length > 0 && (
+                <div data-testid="lista-denuncias" style={{ fontSize: 11, marginTop: 8 }}>
+                  {veredictoDenuncia.coincidencias.map((d, i) => (
+                    <div key={i} data-coincide="1" style={{ fontWeight: 700 }}>
+                      {textoDenuncia(d)}
                     </div>
                   ))}
+                </div>
+              )}
+              <div style={{ fontSize: 11, marginTop: 8, opacity: 0.85 }}>
+                Cheque N° {chequeConsultado.numeroCheque} · cuenta {nroCuenta.trim()} ·{" "}
+                {chequeConsultado.denominacionEntidad} · denuncias del BCRA al{" "}
+                {fmtDate(chequeConsultado.fechaProcesamiento)}
+              </div>
+              {veredictoDenuncia.nota && (
+                <div data-testid="nota-denuncia" style={{ fontSize: 10, marginTop: 6, opacity: 0.7 }}>
+                  {veredictoDenuncia.nota}
                 </div>
               )}
             </div>

@@ -58,12 +58,24 @@ function checkApi(id, desc, ok, detail) {
    * un error de la app.
    */
   const errores = [];
+  /*
+   * El BCRA corta a las 10 consultas por minuto y su 429 viene sin header CORS, así que el
+   * navegador lo escribe como un error de CORS con la URL de la página, no la de la API.
+   * Eso no es un defecto de la app: se anota aparte y se avisa, porque si aparece quiere
+   * decir que los checks que dependen de la API se corrieron contra un BCRA que ya frenó.
+   */
+  const limitados = [];
   function registrarConsola(m) {
     if (m.type() !== "error") return;
     const url = m.location()?.url || "";
+    const texto = m.text();
     if (url.includes("api.bcra.gob.ar")) return;
-    if (/Failed to load resource/.test(m.text()) && /404/.test(m.text()) && !url) return;
-    errores.push(m.text());
+    if (texto.includes("api.bcra.gob.ar") && /CORS|Access-Control/.test(texto)) {
+      limitados.push(texto);
+      return;
+    }
+    if (/Failed to load resource/.test(texto) && /404/.test(texto) && !url) return;
+    errores.push(texto);
   }
   page.on("console", registrarConsola);
   page.on("pageerror", (e) => errores.push("pageerror: " + e.message));
@@ -253,6 +265,7 @@ function checkApi(id, desc, ok, detail) {
     if (valorNacion) {
       await page.locator('[data-testid="select-banco"]').selectOption(valorNacion);
       await page.locator('[data-testid="input-nro-cheque"]').fill("12345678");
+      await page.locator('[data-testid="input-nro-cuenta"]').fill("02240032194");
       await page.locator('[data-testid="btn-verificar-cheque"]').click();
       let chequeOk = true;
       try {
@@ -266,11 +279,114 @@ function checkApi(id, desc, ok, detail) {
       checkApi("V6.2", "Responde si el cheque está denunciado", chequeOk,
         resultadoCheque.slice(0, 80));
       checkApi("V6.3", "Muestra la fecha de procesamiento del dato",
-        /dato del \d{2}\/\d{2}\/\d{4}/.test(resultadoCheque),
-        (resultadoCheque.match(/dato del [^ ]+/) || ["no aparece"])[0]);
-      const denunciado = await page.locator('[data-testid="resultado-cheque"]').getAttribute("data-denunciado").catch(() => null);
-      checkApi("V6.4", "Marca claramente el estado del cheque", denunciado === "0" || denunciado === "1",
-        denunciado === "1" ? "figura denunciado" : "no figura denunciado");
+        /denuncias del BCRA al \d{2}\/\d{2}\/\d{4}/.test(resultadoCheque),
+        (resultadoCheque.match(/al \d{2}\/\d{2}\/\d{4}/) || ["no aparece"])[0]);
+      const nivelLimpio = await page.locator('[data-testid="resultado-cheque"]').getAttribute("data-nivel").catch(() => null);
+      checkApi("V6.5d", "Un número sin ninguna denuncia da CHEQUE LIMPIO",
+        nivelLimpio === "limpio" && /cheque limpio/i.test(resultadoCheque), `nivel=${nivelLimpio}`);
+      check("V6.7b", "Sin denuncias de otras cuentas no hay nota al pie que distraiga",
+        (await page.locator('[data-testid="nota-denuncia"]').count()) === 0, "");
+
+      const nivel = async () =>
+        page.locator('[data-testid="resultado-cheque"]').getAttribute("data-nivel").catch(() => null);
+      const texto = async () =>
+        (await page.locator('[data-testid="resultado-cheque"]').textContent().catch(() => "")).trim();
+
+      // V6.4: sin la cuenta no se consulta, porque la respuesta no serviría.
+      await page.locator('[data-testid="input-nro-cheque"]').fill("456");
+      await page.locator('[data-testid="input-nro-cuenta"]').fill("");
+      await page.locator('[data-testid="btn-verificar-cheque"]').click();
+      await page.waitForTimeout(400);
+      const errSinCuenta = await page.locator('[data-testid="error-cheque"]').textContent().catch(() => "");
+      const hayResultado = await page.locator('[data-testid="resultado-cheque"]').count();
+      check("V6.4a", "Sin el número de cuenta no consulta y lo pide",
+        /cuenta/i.test(errSinCuenta || "") && hayResultado === 0,
+        (errSinCuenta || "sin mensaje").trim().slice(0, 80));
+      check("V6.4b", "El aviso explica dónde está la cuenta en el cheque",
+        /impreso abajo|línea de números/i.test(errSinCuenta || ""), "");
+      /* El veredicto anterior era del cheque 12345678: si sobreviviera, se leería como la
+         respuesta al 456 que está escrito ahora. */
+      check("V6.4c", "Al cortar la consulta no queda en pantalla el veredicto del cheque anterior",
+        hayResultado === 0, `resultados visibles: ${hayResultado}`);
+
+      // Lo mismo al editar los campos: el resultado deja de corresponder a lo que se ve.
+      await page.locator('[data-testid="input-nro-cuenta"]').fill("02240032194");
+      await page.locator('[data-testid="btn-verificar-cheque"]').click();
+      await page.locator('[data-testid="resultado-cheque"]').waitFor({ timeout: 45000 }).catch(() => {});
+      const habia = await page.locator('[data-testid="resultado-cheque"]').count();
+      await page.locator('[data-testid="input-nro-cheque"]').fill("4567");
+      await page.waitForTimeout(200);
+      check("V6.4d", "Cambiar el número de cheque descarta el veredicto anterior",
+        habia === 1 && (await page.locator('[data-testid="resultado-cheque"]').count()) === 0,
+        `antes=${habia}`);
+      await page.locator('[data-testid="input-nro-cheque"]').fill("456");
+      await page.locator('[data-testid="input-nro-cuenta"]').fill("");
+
+      /* Las cuentas que realmente denunciaron el 456 se traen de la API, no del DOM: la
+         pantalla ya no las lista, justamente porque no son el cheque consultado. */
+      let denunciasReales = [];
+      try {
+        const r = await fetch(`https://api.bcra.gob.ar/cheques/v1.0/denunciados/${valorNacion}/456`);
+        if (r.ok) denunciasReales = (await r.json()).results?.detalles ?? [];
+      } catch {
+        /* si falla, los checks que dependen de esto quedan en rojo con su motivo */
+      }
+      checkApi("DATOS", "La API informa denuncias del cheque 456 para cruzar",
+        denunciasReales.length > 1, `${denunciasReales.length} denuncias`);
+
+      if (denunciasReales.length > 1) {
+        const cuentaDenunciada = String(denunciasReales[0].numeroCuenta);
+        const cuentaLimpia = "9999999999";
+
+        await page.locator('[data-testid="input-nro-cuenta"]').fill(cuentaLimpia);
+        await page.locator('[data-testid="btn-verificar-cheque"]').click();
+        let ok456 = true;
+        try {
+          await page.locator('[data-testid="resultado-cheque"]').waitFor({ timeout: 45000 });
+        } catch {
+          ok456 = false;
+        }
+        const limpio = await texto();
+        checkApi("V6.5b", "Una cuenta que no denunció da CHEQUE LIMPIO",
+          ok456 && (await nivel()) === "otrasCuentas" && /cheque limpio/i.test(limpio),
+          `nivel=${await nivel()}`);
+        check("V6.6a", "No lista las denuncias de otras cuentas",
+          (await page.locator('[data-testid="lista-denuncias"]').count()) === 0,
+          `${denunciasReales.length} denuncias existen y ninguna se lista`);
+        check("V6.6b", "Las menciona en una sola línea al pie",
+          /otras chequeras/.test(
+            (await page.locator('[data-testid="nota-denuncia"]').textContent().catch(() => "")) || "",
+          ),
+          ((await page.locator('[data-testid="nota-denuncia"]').textContent().catch(() => "")) || "").slice(0, 70));
+        check("V6.7a", "El veredicto nombra el cheque, la cuenta y el banco",
+          limpio.includes(cuentaLimpia) && /N° 456/.test(limpio) && /NACION/.test(limpio), "");
+        await page.screenshot({ path: path.join(OUT, "06b-cheque-limpio.png"), fullPage: true });
+
+        await page.locator('[data-testid="input-nro-cuenta"]').fill(cuentaDenunciada);
+        await page.waitForTimeout(250);
+        const rojo = await texto();
+        checkApi("V6.5a", "La cuenta que sí denunció da DENUNCIADO",
+          (await nivel()) === "denunciado" && /no lo aceptes/i.test(rojo),
+          `cuenta ${cuentaDenunciada} → nivel=${await nivel()}`);
+        check("V6.5c", "Muestra la causal de esa denuncia",
+          /Denunciado por (titular|tercero)/.test(rojo),
+          (rojo.match(/Causal: [^.]+\./) || ["no aparece"])[0]);
+        check("V6.6c", "Solo muestra la denuncia que es este cheque",
+          (await page.locator('[data-testid="lista-denuncias"] > div').count()) === 1,
+          `de ${denunciasReales.length} denuncias, 1 en pantalla`);
+
+        await page.locator('[data-testid="input-nro-cuenta"]').fill(cuentaDenunciada.slice(2));
+        await page.waitForTimeout(250);
+        check("V6.9", "Si solo coincide el final de la cuenta, avisa en vez de dar por limpio",
+          (await nivel()) === "posible", `${cuentaDenunciada.slice(2)} → nivel=${await nivel()}`);
+
+        await page.locator('[data-testid="input-nro-cuenta"]').fill(
+          cuentaDenunciada.replace(/(\d\d)(\d)/, "$1-$2"),
+        );
+        await page.waitForTimeout(250);
+        check("V6.8", "La cuenta con guiones se compara igual que sin ellos",
+          (await nivel()) === "denunciado", `nivel=${await nivel()}`);
+      }
     } else {
       checkApi("V6.2", "Responde si el cheque está denunciado", false, "no encontré el Banco Nación en la lista");
     }
@@ -338,12 +454,53 @@ function checkApi(id, desc, ok, detail) {
     tabla.hay && (!tabla.desborda || tabla.sePuedeArrastrar),
     JSON.stringify(tabla));
 
+  /* El panel de denuncias arranca cerrado, así que medir la página sin abrirlo no dice nada
+     sobre él: los números de cuenta son largos y es justo donde el ancho puede desbordar. */
+  await mpage.locator('[data-testid="panel-denunciados"] summary').click();
+  let listaMovilOk = true;
+  try {
+    await mpage.waitForFunction(
+      () => document.querySelectorAll('[data-testid="select-banco"] option').length > 20,
+      null, { timeout: 45000 },
+    );
+    const valorNacionMovil = await mpage.evaluate(() => {
+      const opt = [...document.querySelectorAll('[data-testid="select-banco"] option')]
+        .find((o) => /NACION ARGENTINA/i.test(o.textContent));
+      return opt ? opt.value : null;
+    });
+    await mpage.locator('[data-testid="select-banco"]').selectOption(valorNacionMovil);
+    await mpage.locator('[data-testid="input-nro-cheque"]').fill("456");
+    await mpage.locator('[data-testid="input-nro-cuenta"]').fill("02240032194");
+    await mpage.locator('[data-testid="btn-verificar-cheque"]').click();
+    await mpage.locator('[data-testid="resultado-cheque"]').waitFor({ timeout: 45000 });
+  } catch {
+    listaMovilOk = false;
+  }
+  await mpage.waitForTimeout(300);
+  const mb2 = await mpage.evaluate(() => ({
+    sw: document.documentElement.scrollWidth,
+    cw: document.documentElement.clientWidth,
+  }));
+  checkApi("V9.2d", "Móvil: con el resultado de denuncias abierto tampoco scrollea en horizontal",
+    listaMovilOk && mb2.sw <= mb2.cw + 1, JSON.stringify({ ...mb2, listaMovilOk }));
+
   await mpage.screenshot({ path: path.join(OUT, "07-verificacion-movil.png"), fullPage: true });
+  await mpage.locator('[data-testid="resultado-cheque"]').scrollIntoViewIfNeeded().catch(() => {});
+  await mpage.screenshot({ path: path.join(OUT, "07b-denuncias-movil.png") });
 
   check("CONSOLA", "Sin errores de consola ni excepciones",
     errores.length === 0, errores.slice(0, 3).join(" || ") || "ninguno");
 
   await browser.close();
+
+  if (limitados.length) {
+    console.log(
+      `\nAVISO: el BCRA frenó ${limitados.length} consulta(s) por su límite de 10 por minuto ` +
+      `(responde 429 sin header CORS, por eso figura como error de CORS).\n` +
+      `Los checks marcados [API] pueden haber corrido con datos incompletos. ` +
+      `Esperá un minuto sin consultar y volvé a correr la verificación.`,
+    );
+  }
 
   const fallan = results.filter((r) => !r.ok);
   const fallanApi = fallan.filter((r) => r.api);

@@ -10,6 +10,8 @@
     "verificar:calendario": "node verificacion/calendario.mjs",
     "verificar:feriados": "node verificacion/feriados.mts",
     "verificar:cuit": "node verificacion/cuit.mts",
+    "verificar:denuncias": "node verificacion/denuncias.mts",
+    "verificar:limite": "node verificacion/limite.mts",
     "verificar:bcra": "node verificacion/bcra.mjs"
   },
   "dependencies": {
