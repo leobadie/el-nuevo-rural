@@ -13,6 +13,7 @@
     "verificar:denuncias": "node verificacion/denuncias.mts",
     "verificar:limite": "node verificacion/limite.mts",
     "verificar:registros": "node verificacion/registros.mts",
+    "verificar:base": "node verificacion/base-registros.mts",
     "importar:registros": "node scripts/importar-registros.mjs",
     "verificar:bcra": "node verificacion/bcra.mjs"
   },

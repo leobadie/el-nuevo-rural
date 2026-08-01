@@ -53,7 +53,7 @@ tiene", que es falso.
 | # | Decisión | Valor elegido |
 |---|----------|---------------|
 | DU1 | Alcance | Datos de sociedad para todo el país + personas donde la fuente las tenga. |
-| DU2 | Almacenamiento | A definir según el espacio disponible; se decide con la medición de abajo. |
+| DU2 | Almacenamiento | Todo el país (~288 MB de los 500 MB del plan). Decidido el 01/08/2026 contra la medición real del importador: acotar a Buenos Aires, CABA, Córdoba y Santa Fe daba 956.638 sociedades y ~239 MB, o sea ahorraba 50 MB y dejaba afuera 295.000 sociedades a las que la pantalla les diría "no figura". Las personas no eran el motivo: con el filtro ya entraba el 97,3 % de ellas. |
 
 ## Decisiones técnicas
 
@@ -69,18 +69,42 @@ tiene", que es falso.
 
 ### Cuánto ocupa
 
-Medido sobre los archivos reales, con el esquema de DR2 y DR3:
+La estimación previa a la carga (~288 MB) resultó ser **casi la mitad de lo real**, y el error
+estuvo entero en los índices: se calcularon como un 35 % del tamaño de los datos y pesaban más
+del doble. Queda anotado porque esa estimación fue la base para decidir el alcance (DU2), y con
+el número correcto la decisión podría haber sido otra.
 
-| Tabla | Filas | Tamaño estimado |
-|---|---|---|
-| `sociedades` | 1.251.568 | ~142 MB |
-| `sociedad_personas` | 1.168.771 | ~71 MB |
-| Índices (~35 %) | | ~75 MB |
-| **Total** | | **~288 MB** |
+Medido en la base el 01/08/2026, con la carga nacional completa:
 
-El plan gratuito de Supabase son 500 MB. Entra, pero ocuparía más de la mitad, así que la
-carga es incremental y verificable: se importa, se mide el tamaño real en la base y recién ahí
-se decide si se deja completo o se acota por provincia (DR5).
+| Objeto | | Al importar | Tras la 010 | Tras la 011 |
+|---|---|---|---|---|
+| `sociedades` | datos | 224 MB | 224 MB | 224 MB |
+| `sociedades_pkey` | índice | 38 MB | 38 MB | 38 MB |
+| `sociedades_razon_social_idx` | índice GIN | 34 MB | — | — |
+| `sociedad_personas` | datos | 127 MB | 127 MB | 118 MB |
+| `..._cuit_rol_numero_documento_key` | índice único | 60 MB | 60 MB | — |
+| `sociedad_personas_pkey` | índice | 25 MB (el `id`) | 25 MB | 45 MB (la tripleta) |
+| `sociedad_personas_cuit_idx` | índice | 23 MB | — | — |
+| **Total** (`pg_total_relation_size`) | | **530 MB** | **473 MB** | **425 MB** |
+
+Las columnas salen de `detalle_registros()`; los dos índices borrados por la 010 están por
+resta contra la medición anterior, que es de dónde salió cada MB.
+
+La clave primaria nueva de `sociedad_personas` ocupa 45 MB donde el índice único ocupaba 60,
+aunque indexa las mismas tres columnas: se construyó sobre la tabla ya compactada por el
+`vacuum full` y sin el `id`, así que quedó sin el bloat que traía el original.
+
+El plan gratuito de Supabase son 500 MB: la carga completa **no entraba**. Lo que sobraba no
+eran los datos sino los índices, y ninguno de los tres que se borraron servía para algo:
+
+- `sociedades_razon_social_idx` era un GIN de búsqueda de texto sobre 1,25M de razones
+  sociales, y la app llega siempre por CUIT: `razon_social` solo se muestra.
+- `sociedad_personas_cuit_idx` era redundante con el único de `(cuit, rol, numero_documento)`,
+  que empieza por `cuit`.
+- El `id` de `sociedad_personas` no aparecía en ninguna consulta; la clave real es esa
+  tripleta, que pasó a ser la clave primaria reusando el índice que ya existía.
+
+`npm run verificar:base` mide esto en cada corrida y falla si el margen baja del 10 %.
 
 ## Requisitos verificables
 
@@ -105,6 +129,11 @@ se decide si se deja completo o se acota por provincia (DR5).
 - R3.2 Se aclara que son las personas **registradas**, y que los accionistas de una S.A. no
        son información pública.
 - R3.3 Nunca se presenta la ausencia de datos como un resultado limpio.
+- R3.4 Si la consulta vuelve vacía porque RLS le esconde la tabla a esta sesión, el bloque se
+       calla en vez de decir que el CUIT no figura: con una lista vacía no se puede distinguir
+       un CUIT ausente de uno que no se puede ver.
+- R3.5 Si la provincia tiene un registro propio que publique las personas, se dice cuál es, se
+       enlaza, y se aclara qué hace falta para entrar. Ver "Registros provinciales" abajo.
 
 ### R4 — CUIL de persona física
 - R4.1 Con un CUIT de persona (20, 23, 24, 27) se aclara que estos registros son de
@@ -125,11 +154,37 @@ se decide si se deja completo o se acota por provincia (DR5).
 - R6.2 En pantallas angostas nada scrollea en horizontal salvo las tablas, dentro de su caja.
 - R6.3 Sin dependencias nuevas.
 
+## Registros provinciales
+
+Investigado el 01/08/2026, a pedido del usuario, porque el negocio opera en Córdoba y las
+98.998 sociedades cordobesas cargadas llegan a sus personas en apenas el 1,4 % de los casos
+(medido sobre una muestra de 1.000: 14 tenían personas, y por estar además inscriptas en la
+IGJ).
+
+**No hay forma de cargarlas.** El portal provincial de datos abiertos
+(`datosgestionabierta.cba.gov.ar`, 150 datasets) no publica nada de la Inspección de Personas
+Jurídicas, y en el catálogo nacional el único dataset con personas de sociedades sigue siendo
+el de la IGJ. Tampoco hay dataset de autoridades para ninguna otra provincia.
+
+**Pero el dato existe y es gratis.** La IPJ de Córdoba tiene *Consulta de Sociedad*
+(`tramitesipj.cba.gov.ar`): inmediata, sin costo, se busca **por CUIT** y devuelve los datos de
+la entidad, el capital social, el estado de la sociedad y **las autoridades con sus cargos**.
+Cubre S.A.S., S.A. y S.R.L. con sede en la provincia. Requiere CiDi nivel 2.
+
+Por eso R3.5: la pantalla enlaza esa consulta cuando la sociedad es de Córdoba, con el CUIT a
+mano y avisando que hace falta CiDi. No se automatiza: es una consulta autenticada con la
+identidad personal del usuario, de a una; hacerlo en masa sería frágil y contra sus términos.
+Agregar otra provincia es sumar una entrada a `CONSULTAS_PROVINCIALES` en
+`src/lib/registros/sociedad.ts`.
+
 ## Fuera de alcance
 
 - Accionistas de sociedades anónimas: no son públicos.
 - Datos de personas físicas por CUIL: no hay fuente pública desde la baja del padrón de AFIP.
-- Registros de comercio provinciales: no publican datos abiertos.
+- Copiar los registros de comercio provinciales: no publican datos abiertos (ver arriba: lo que
+  sí se hace es enlazar su consulta).
+- Los edictos del Boletín Oficial de Córdoba, que sí publican socios con documento al
+  constituirse una sociedad: son PDF sin estructura y solo cubren desde la publicación digital.
 - Balances y asambleas de IGJ (existen en la fuente, pero no ayudan a decidir si aceptar un
   cheque).
 
@@ -139,3 +194,7 @@ se decide si se deja completo o se acota por provincia (DR5).
 2. `npm run verificar:registros` — parseo de los CSV reales (comas, BOM, deduplicación) y
    armado del resultado, sin depender de la base.
 3. `npm run verificar:bcra` — la pestaña completa en navegador, desktop y móvil.
+4. `npm run verificar:base` — los datos ya cargados en Supabase: que las filas hayan entrado,
+   que el cruce CUIT → personas cierre con filas reales y que el tamaño entre en el plan.
+   Es el único de los cuatro que mira la base; necesita la misma `service_role` key que el
+   importador.

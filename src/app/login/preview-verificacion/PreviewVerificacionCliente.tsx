@@ -15,10 +15,12 @@ const CUIT_DE_PRUEBA = "30546689979";
 
 /*
  * El bloque "quién está detrás" sale de tablas propias que se cargan con
- * scripts/importar-registros.mjs. Hasta que estén cargadas, la pestaña no lo muestra (no hay
- * nada que mostrar), así que acá abajo se rinde con datos de muestra para poder verificar los
- * cuatro casos, sobre todo los tres en los que NO hay personas: son los que tienen que
- * explicar por qué faltan en vez de dar a entender que la sociedad no tiene socios.
+ * scripts/importar-registros.mjs y que RLS solo le muestra a un usuario activo. Esta página es
+ * pública y no tiene sesión, así que arriba el bloque no se muestra: con la lista vacía que
+ * devuelve RLS no se puede distinguir un CUIT ausente de uno que no se puede ver. Por eso acá
+ * abajo se rinde con datos de muestra, para poder verificar los cuatro casos, sobre todo los
+ * tres en los que NO hay personas: son los que tienen que explicar por qué faltan en vez de
+ * dar a entender que la sociedad no tiene socios.
  *
  * Los datos son de estructura real (una S.A. porteña con su directorio); los documentos están
  * cambiados porque acá no hace falta que sean de nadie.
@@ -96,8 +98,10 @@ export default function PreviewVerificacionCliente() {
           Bloque &quot;quién está detrás&quot; con datos de muestra
         </div>
         <div style={{ fontSize: 11, color: "#777", marginBottom: 16 }}>
-          Se rinde acá aparte porque las tablas de sociedades todavía no están cargadas en la
-          base. Son los cuatro casos que tiene que resolver.
+          Se rinde acá aparte porque esta página no tiene sesión: los datos están cargados en la
+          base, pero RLS solo se los muestra a un usuario activo, así que arriba el bloque se
+          calla en vez de afirmar que el CUIT no figura. Son los cuatro casos que tiene que
+          resolver.
         </div>
         {CASOS.map((c) => (
           <div key={c.cuit} data-testid={`caso-${c.cuit}`} style={{ marginBottom: 8 }}>

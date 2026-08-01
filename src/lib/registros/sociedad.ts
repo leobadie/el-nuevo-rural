@@ -90,7 +90,40 @@ export interface BloqueSociedad {
   motivoSinPersonas: MotivoSinPersonas | null;
   /** Texto que explica la ausencia sin dar a entender que la sociedad no tiene socios. */
   explicacion: string;
+  /** Dónde consultar las personas a mano, cuando la provincia tiene un servicio público. */
+  consultaProvincial: ConsultaProvincial | null;
 }
+
+export interface ConsultaProvincial {
+  provincia: string;
+  organismo: string;
+  url: string;
+  /** Qué se obtiene y qué hace falta para entrar, para no mandar a nadie a una puerta cerrada. */
+  detalle: string;
+}
+
+/*
+ * Registros provinciales que publican las autoridades de una sociedad, consultables por CUIT.
+ *
+ * No son datos abiertos y por eso no se pueden copiar a la base como los de la IGJ: son
+ * consultas de a una, con identidad. Pero el dato existe y es gratis, así que decir "no hay
+ * personas" sin decir dónde sí están sería quedarse corto.
+ *
+ * Córdoba (verificado el 01/08/2026 en ipj.cba.gov.ar): la Consulta de Sociedad devuelve datos
+ * de la entidad, capital social, estado y las autoridades con sus cargos. Es gratuita e
+ * inmediata, se busca por CUIT y cubre S.A.S., S.A. y S.R.L. con sede en la provincia.
+ */
+const CONSULTAS_PROVINCIALES: Record<string, ConsultaProvincial> = {
+  CORDOBA: {
+    provincia: "CORDOBA",
+    organismo: "Inspección de Personas Jurídicas de Córdoba",
+    url: "https://tramitesipj.cba.gov.ar/",
+    detalle:
+      "La consulta es gratuita, sale en el acto y se busca por CUIT: además de las autoridades " +
+      "con sus cargos, informa el capital social y si la sociedad está vigente. Cubre S.A.S., " +
+      "S.A. y S.R.L. con sede en Córdoba, y para entrar hace falta CiDi nivel 2.",
+  },
+};
 
 const EN_CABA = /CIUDAD AUTONOMA|CAPITAL FEDERAL|C\.A\.B\.A/i;
 
@@ -110,6 +143,7 @@ export function armarBloqueSociedad(
       sociedad,
       personas: [],
       motivoSinPersonas: "esPersonaFisica",
+      consultaProvincial: null,
       explicacion:
         "Este CUIT es de una persona física, no de una sociedad. Estos registros son de " +
         "sociedades, y no hay padrón público de personas físicas desde que se dio de baja el " +
@@ -119,7 +153,7 @@ export function armarBloqueSociedad(
 
   if (personas.length > 0) {
     return { sociedad, personas: ordenarPersonas(personas), motivoSinPersonas: null,
-      explicacion: ACLARACION_ACCIONISTAS };
+      consultaProvincial: null, explicacion: ACLARACION_ACCIONISTAS };
   }
 
   if (!sociedad) {
@@ -127,6 +161,7 @@ export function armarBloqueSociedad(
       sociedad: null,
       personas: [],
       motivoSinPersonas: "noEstaLaSociedad",
+      consultaProvincial: null,
       explicacion:
         "Este CUIT no figura en el Registro Nacional de Sociedades. Puede ser una sociedad " +
         "muy nueva, o no ser una sociedad. No quiere decir que la empresa no exista.",
@@ -140,6 +175,7 @@ export function armarBloqueSociedad(
       sociedad,
       personas: [],
       motivoSinPersonas: "sociedadDeOtraProvincia",
+      consultaProvincial: consultaDeLaProvincia(sociedad.provincia),
       explicacion:
         `No hay personas cargadas porque esta sociedad está inscripta ${donde}, y el único ` +
         "registro con datos abiertos de socios y autoridades es el de la Ciudad de Buenos " +
@@ -151,8 +187,15 @@ export function armarBloqueSociedad(
     sociedad,
     personas: [],
     motivoSinPersonas: "sinRegistro",
+    consultaProvincial: null,
     explicacion:
       "La sociedad figura en el registro, pero sin personas asociadas en la última " +
       "publicación de la Inspección General de Justicia. " + ACLARACION_ACCIONISTAS,
   };
+}
+
+/** El registro provincial donde sí se pueden consultar las personas, si esa provincia tiene. */
+export function consultaDeLaProvincia(provincia: string | null): ConsultaProvincial | null {
+  if (!provincia) return null;
+  return CONSULTAS_PROVINCIALES[provincia.trim().toUpperCase()] ?? null;
 }

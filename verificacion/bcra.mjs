@@ -410,6 +410,18 @@ function checkApi(id, desc, ok, detail) {
     `input="${valorPrecargado}" resultado=${precargaOk}`);
   await page2.close();
 
+  /*
+   * R3.4: esta página no tiene sesión, así que RLS le esconde las 1.251.568 sociedades y la
+   * consulta vuelve vacía, igual que un CUIT inexistente. El bloque tiene que callarse, no
+   * decir "no figura en el Registro Nacional de Sociedades" sobre YPF, que sí está cargada.
+   * Vale para cualquier usuario sin permiso y para las tablas creadas pero sin importar.
+   */
+  const textoResultadoCuit = await page.locator('[data-testid="resultado-cuit"]').textContent();
+  check("R3.4", "Sin poder ver la tabla, no afirma que el CUIT no figura",
+    !/no figura en el Registro Nacional de Sociedades/i.test(textoResultadoCuit) &&
+      (await page.locator('[data-testid="resultado-cuit"] [data-testid="error-registro"]').count()) === 0,
+    (textoResultadoCuit.match(/no figura[^.]*\./) || ["no lo dice: bien"])[0].slice(0, 80));
+
   // ---------- R1-R4: quién está detrás del CUIT ----------
   const caso = (cuit) => `[data-testid="caso-${cuit}"]`;
   const textoCaso = async (cuit) =>
@@ -450,6 +462,21 @@ function checkApi(id, desc, ok, detail) {
     (cordoba.match(/No hay personas cargadas[^.]*\./) || ["no aparece"])[0].slice(0, 95));
   check("R3.3", "Nunca presenta la ausencia como un resultado limpio",
     !/sin socios|no tiene socios|ningún socio/i.test(cordoba), "");
+
+  /* Córdoba no publica datos abiertos de socios, pero su Inspección de Personas Jurídicas los
+     consulta gratis por CUIT: la pantalla tiene que decir dónde, no solo que acá no están. */
+  const linkCordoba = page.locator(`${caso("30712345670")} [data-testid="link-consulta-provincial"]`);
+  check("R3.5", "Para una sociedad de Córdoba ofrece dónde consultar las personas",
+    (await linkCordoba.count()) === 1 &&
+      (await linkCordoba.getAttribute("href")) === "https://tramitesipj.cba.gov.ar/",
+    (await linkCordoba.textContent().catch(() => "no aparece")).trim());
+  check("R3.5b", "El enlace se abre aparte y no deja la app expuesta",
+    (await linkCordoba.getAttribute("target")) === "_blank" &&
+      /noopener/.test((await linkCordoba.getAttribute("rel")) || ""), "");
+  check("R3.5c", "Dice qué hace falta para entrar y con qué buscar",
+    /CiDi/i.test(cordoba) && cordoba.includes("30712345670"), "");
+  check("R3.5d", "Un CUIT que no figura no manda a ninguna consulta provincial",
+    (await page.locator(`${caso("30999999994")} [data-testid="consulta-provincial"]`).count()) === 0, "");
 
   const noFigura = await textoCaso("30999999994");
   check("R1.3b", "Un CUIT que no figura lo dice sin romper nada",

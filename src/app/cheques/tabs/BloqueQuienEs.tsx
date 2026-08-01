@@ -10,7 +10,17 @@ import {
   NOMBRE_ROL,
 } from "@/lib/registros/sociedad";
 
+/*
+ * La grilla de una sola columna `minmax(0, 1fr)` no es decorativa: la tabla de personas pide
+ * 420px de ancho mínimo para que las tres columnas se lean, y el <body> de la app es un flex
+ * column, así que ese mínimo se propaga hacia arriba y estira la página entera. Medido en un
+ * viewport de 390px, la página pasaba a 494px: el botón "Consultar" quedaba fuera de la
+ * pantalla y no se podía tocar. Con la grilla el mínimo del panel es 0 y la tabla se arrastra
+ * dentro de su caja, que es lo que pide R6.2. Es el mismo blindaje que usa VerificacionTab.
+ */
 const panel = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr)",
   background: "#fff",
   border: "1px solid #e0e0e0",
   borderRadius: 10,
@@ -36,8 +46,14 @@ export default function BloqueQuienEs({
   cuit: string;
   registro: ResultadoRegistro;
 }) {
-  // Sin las tablas cargadas el bloque no se muestra: no tiene nada que aportar todavía.
-  if (registro.estado === "sinTablas") return null;
+  /*
+   * El bloque no se muestra cuando no hay nada que aportar: ni las tablas cargadas
+   * ("sinTablas"), ni una sola fila visible para esta sesión ("sinAcceso"). Callar es lo
+   * correcto: con la lista vacía que devuelve RLS no se puede distinguir un CUIT que no está
+   * de uno que no se puede ver, y decir "no figura" sobre una empresa que sí está cargada es
+   * peor que no decir nada.
+   */
+  if (registro.estado === "sinTablas" || registro.estado === "sinAcceso") return null;
   if (registro.estado === "error") {
     return (
       <div style={panel}>
@@ -111,6 +127,34 @@ export default function BloqueQuienEs({
           style={{ background: "#FCF3CF", color: "#7D6608", borderRadius: 8, padding: "10px 12px", fontSize: 11, lineHeight: 1.6 }}
         >
           {bloque.explicacion}
+          {/* Si la provincia tiene su propia consulta pública, se dice dónde y qué hace falta:
+              el dato existe y es gratis, solo que hay que ir a buscarlo a mano. */}
+          {bloque.consultaProvincial && (
+            <div data-testid="consulta-provincial" style={{ marginTop: 8 }}>
+              <div>{bloque.consultaProvincial.detalle}</div>
+              <a
+                data-testid="link-consulta-provincial"
+                href={bloque.consultaProvincial.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "inline-block",
+                  marginTop: 6,
+                  padding: "5px 10px",
+                  background: NAVY,
+                  color: "white",
+                  borderRadius: 6,
+                  fontWeight: 700,
+                  textDecoration: "none",
+                }}
+              >
+                Consultarlas en {bloque.consultaProvincial.organismo} →
+              </a>
+              <div style={{ marginTop: 4, opacity: 0.8 }}>
+                Buscá por el CUIT {cuit}.
+              </div>
+            </div>
+          )}
         </div>
       )}
 

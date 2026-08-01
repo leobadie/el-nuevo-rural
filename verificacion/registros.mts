@@ -17,6 +17,7 @@ import {
   limpiarNombre,
   clavePersona,
 } from "../src/lib/registros/parseo.ts";
+import { esTablaInexistente } from "../src/lib/registros/errores.ts";
 import {
   antiguedadEnAnios,
   armarBloqueSociedad,
@@ -203,6 +204,48 @@ console.log("\n=== Presentación ===");
     domicilioLegible(SOC_CORDOBA));
   ok(domicilioLegible({ ...SOC_CABA, provincia: null, localidad: null }) === "",
     "Sin domicilio, vacío");
+}
+
+console.log("\n=== R3.5 — Dónde sí se pueden consultar las personas ===");
+{
+  const cordoba = armarBloqueSociedad("30712345670", SOC_CORDOBA, []);
+  ok(cordoba.consultaProvincial?.provincia === "CORDOBA",
+    "Una sociedad de Córdoba ofrece la consulta de la IPJ",
+    cordoba.consultaProvincial?.organismo ?? "ninguna");
+  ok(/tramitesipj\.cba\.gov\.ar/.test(cordoba.consultaProvincial?.url ?? ""),
+    "Con la dirección del portal de trámites", cordoba.consultaProvincial?.url ?? "");
+  ok(/CiDi/i.test(cordoba.consultaProvincial?.detalle ?? ""),
+    "Y avisa que hace falta CiDi, para no mandar a nadie a una puerta cerrada");
+  ok(/gratuita|sin costo/i.test(cordoba.consultaProvincial?.detalle ?? ""),
+    "Aclara que no cuesta nada");
+
+  // Provincias sin servicio conocido: no se inventa un enlace.
+  const otra = armarBloqueSociedad("30712345670", { ...SOC_CORDOBA, provincia: "LA PAMPA" }, []);
+  ok(otra.consultaProvincial === null, "Una provincia sin consulta conocida no ofrece ninguna",
+    String(otra.consultaProvincial));
+  ok(otra.motivoSinPersonas === "sociedadDeOtraProvincia",
+    "Pero igual explica por qué faltan las personas");
+
+  // Con personas no hay nada que ir a buscar afuera.
+  const conPersonas = armarBloqueSociedad("30707512292", SOC_CABA, [
+    { nombre: "PEREZ, JUAN", rol: "S", tipo_documento: "DNI", numero_documento: "20000001" },
+  ]);
+  ok(conPersonas.consultaProvincial === null,
+    "Con las personas a la vista no manda a consultar a ningún lado");
+}
+
+console.log("\n=== Tablas todavía no cargadas ===");
+{
+  /*
+   * Medido contra la base real antes de correr la migración 009: PostgREST contesta 404 con
+   * PGRST205, no con el 42P01 de Postgres. Reconocer solo el de Postgres hacía que la pantalla
+   * mostrara en rojo "No se pudo consultar el registro de sociedades", que se lee como una
+   * falla cuando lo único que pasa es que el dato todavía no se cargó.
+   */
+  ok(esTablaInexistente("PGRST205"), "El 404 de PostgREST es 'todavía no está cargado'");
+  ok(esTablaInexistente("42P01"), "El código de Postgres también");
+  ok(!esTablaInexistente("PGRST301"), "Un error de permisos NO se disfraza de tabla ausente");
+  ok(!esTablaInexistente(undefined), "Un error sin código tampoco");
 }
 
 console.log("\n=== Filas normales, que son la enorme mayoría ===");
