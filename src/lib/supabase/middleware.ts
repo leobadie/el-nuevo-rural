@@ -2,7 +2,9 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { User } from "@supabase/supabase-js";
 
-const PUBLIC_PATHS = ["/login"];
+// /api/diagnostico es temporal: mide la conexión con Supabase desde el
+// servidor y tiene que poder responder sin sesión. Quitar al terminar.
+const PUBLIC_PATHS = ["/login", "/api/diagnostico"];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });

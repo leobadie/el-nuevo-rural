@@ -13,13 +13,18 @@ export async function createClient() {
           return cookieStore.getAll();
         },
         setAll(cookiesToSet) {
-          try {
-            for (const { name, value, options } of cookiesToSet) {
+          for (const { name, value, options } of cookiesToSet) {
+            try {
               cookieStore.set(name, value, options);
+            } catch (e) {
+              // Desde un Server Component no se pueden escribir cookies y el
+              // error es esperable: el proxy ya refrescó la sesión en esta
+              // misma request. Pero desde una Server Action sí se puede, y si
+              // ahí falla el usuario queda autenticado en Supabase y sin
+              // sesión en el navegador. Antes esto se descartaba en silencio,
+              // así que ese caso era invisible: ahora al menos queda en el log.
+              console.warn(`no se pudo escribir la cookie ${name}:`, e);
             }
-          } catch {
-            // Called from a Server Component — safe to ignore because
-            // middleware refreshes the session on every request.
           }
         },
       },
