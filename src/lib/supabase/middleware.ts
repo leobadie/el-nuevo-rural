@@ -1,10 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
+import { fetchConTimeout } from "./fetchConTimeout";
 import { NextResponse, type NextRequest } from "next/server";
 import type { User } from "@supabase/supabase-js";
 
-// /api/diagnostico es temporal: mide la conexión con Supabase desde el
-// servidor y tiene que poder responder sin sesión. Quitar al terminar.
-const PUBLIC_PATHS = ["/login", "/api/diagnostico"];
+const PUBLIC_PATHS = ["/login"];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -13,6 +12,7 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: fetchConTimeout },
       cookies: {
         getAll() {
           return request.cookies.getAll();
