@@ -3,7 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import IngresosEgresosShell from "./IngresosEgresosShell";
 import type {
   Categoria,
+  ConfigProveedores,
+  EntregaProveedor,
   GastoFijo,
+  ImputacionPago,
   LimiteCategoria,
   Movimiento,
   Pedido,
@@ -32,16 +35,29 @@ export default async function IngresosEgresosPage({
     .eq("id", user.id)
     .maybeSingle();
 
-  const [movsRes, ventasXRPRes, gastosFijosRes, proveedoresRes, categoriasRes, limitesRes, pedidosRes] =
-    await Promise.all([
-      supabase.from("movimientos").select("*").order("creado_el", { ascending: true }),
-      supabase.from("ventas_xrp").select("*").order("fecha", { ascending: true }),
-      supabase.from("gastos_fijos").select("*").order("descripcion", { ascending: true }),
-      supabase.from("proveedores").select("*").order("nombre", { ascending: true }),
-      supabase.from("categorias").select("*").order("nombre", { ascending: true }),
-      supabase.from("limites_categorias").select("*"),
-      supabase.from("pedidos").select("*").order("enviado_el", { ascending: false }),
-    ]);
+  const [
+    movsRes,
+    ventasXRPRes,
+    gastosFijosRes,
+    proveedoresRes,
+    categoriasRes,
+    limitesRes,
+    pedidosRes,
+    entregasRes,
+    imputacionesRes,
+    configProveedoresRes,
+  ] = await Promise.all([
+    supabase.from("movimientos").select("*").order("creado_el", { ascending: true }),
+    supabase.from("ventas_xrp").select("*").order("fecha", { ascending: true }),
+    supabase.from("gastos_fijos").select("*").order("descripcion", { ascending: true }),
+    supabase.from("proveedores").select("*").order("nombre", { ascending: true }),
+    supabase.from("categorias").select("*").order("nombre", { ascending: true }),
+    supabase.from("limites_categorias").select("*"),
+    supabase.from("pedidos").select("*").order("enviado_el", { ascending: false }),
+    supabase.from("entregas_proveedor").select("*").order("fecha", { ascending: true }),
+    supabase.from("imputaciones_pago").select("*").order("creado_el", { ascending: true }),
+    supabase.from("config_proveedores").select("*").maybeSingle(),
+  ]);
 
   return (
     <IngresosEgresosShell
@@ -55,6 +71,9 @@ export default async function IngresosEgresosPage({
       categoriasIniciales={(categoriasRes.data ?? []) as Categoria[]}
       limitesIniciales={(limitesRes.data ?? []) as LimiteCategoria[]}
       pedidosIniciales={(pedidosRes.data ?? []) as Pedido[]}
+      entregasIniciales={(entregasRes.data ?? []) as EntregaProveedor[]}
+      imputacionesIniciales={(imputacionesRes.data ?? []) as ImputacionPago[]}
+      configProveedoresInicial={(configProveedoresRes.data ?? null) as ConfigProveedores | null}
     />
   );
 }

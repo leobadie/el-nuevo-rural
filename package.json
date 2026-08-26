@@ -15,6 +15,8 @@
     "verificar:registros": "node verificacion/registros.mts",
     "verificar:base": "node verificacion/base-registros.mts",
     "importar:registros": "node scripts/importar-registros.mjs",
+    "verificar:proveedores": "node verificacion/proveedores.mjs",
+    "verificar:base-proveedores": "node verificacion/base-proveedores.mts",
     "verificar:bcra": "node verificacion/bcra.mjs"
   },
   "dependencies": {

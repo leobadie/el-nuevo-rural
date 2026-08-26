@@ -108,3 +108,61 @@ export interface ResumenMensualIE {
   ingresos: number;
   egresos: number;
 }
+
+export interface EntregaProveedor {
+  id: string;
+  proveedor: string;
+  fecha: string;
+  monto: number;
+  comprobante: string | null;
+  detalle: string | null;
+  creado_el: string;
+  creado_por: string | null;
+}
+
+export type NuevaEntregaProveedor = Omit<EntregaProveedor, "id" | "creado_el" | "creado_por">;
+
+export interface ImputacionPago {
+  id: string;
+  movimiento_id: string;
+  entrega_id: string;
+  monto: number;
+  creado_el: string;
+}
+
+/** Una entrega con lo que ya se le imputó y lo que falta. */
+export interface EntregaConSaldo extends EntregaProveedor {
+  pagado: number;
+  saldo: number;
+  estado: "Impaga" | "Parcial" | "Pagada";
+}
+
+/** Un pago (movimiento con egreso) con lo que ya se aplicó y lo que queda a cuenta. */
+export interface PagoConSaldo {
+  id: string;
+  fecha: string;
+  descripcion: string | null;
+  medio_pago: MedioPago | null;
+  monto: number;
+  imputado: number;
+  disponible: number;
+}
+
+export interface CuentaProveedor {
+  proveedor: string;
+  entregado: number;
+  pagado: number;
+  /** entregado − pagado. Positivo = le debés. */
+  saldo: number;
+  /** Pagos cargados que todavía no se aplicaron a ninguna entrega. */
+  aCuenta: number;
+  cantEntregasPendientes: number;
+}
+
+export interface ConfigProveedores {
+  /**
+   * La cuenta corriente sólo mira lo cargado a partir de acá. Los movimientos anteriores
+   * siguen intactos en Movimientos: es un filtro de esa pantalla, no un borrado.
+   */
+  corte_cuenta_corriente: string;
+}
