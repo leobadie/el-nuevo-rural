@@ -13,15 +13,20 @@ import GastosFijosTab from "./tabs/GastosFijosTab";
 import DashboardTab from "./tabs/DashboardTab";
 import CategoriasTab from "./tabs/CategoriasTab";
 import ProveedoresTab from "./tabs/ProveedoresTab";
+import CuentaProveedoresTab from "./tabs/CuentaProveedoresTab";
 import MensualTab from "./tabs/MensualTab";
 import CierreTab from "./tabs/CierreTab";
 import PedidosTab from "./tabs/PedidosTab";
 import HistorialTab from "./tabs/HistorialTab";
 import type {
   Categoria,
+  EntregaProveedor,
   GastoFijo,
+  ImputacionPago,
   LimiteCategoria,
+  MedioPago,
   Movimiento,
+  NuevaEntregaProveedor,
   NuevoGastoFijo,
   NuevoMovimiento,
   NuevoPedido,
@@ -57,6 +62,7 @@ const TABS: { key: string; label: string }[] = [
   { key: "gastosfijos", label: "Gastos Fijos" },
   { key: "dashboard", label: "Dashboard" },
   { key: "categorias", label: "Resumen por categoría" },
+  { key: "cuentaproveedores", label: "Proveedores (cuenta corriente)" },
   { key: "proveedores", label: "Resumen por proveedor" },
   { key: "mensual", label: "Resumen mensual" },
   { key: "cierre", label: "Cierre diario" },
@@ -75,6 +81,8 @@ export default function IngresosEgresosShell({
   categoriasIniciales,
   limitesIniciales,
   pedidosIniciales,
+  entregasIniciales,
+  imputacionesIniciales,
 }: {
   esAdmin: boolean;
   userId: string;
@@ -86,6 +94,8 @@ export default function IngresosEgresosShell({
   categoriasIniciales: Categoria[];
   limitesIniciales: LimiteCategoria[];
   pedidosIniciales: Pedido[];
+  entregasIniciales: EntregaProveedor[];
+  imputacionesIniciales: ImputacionPago[];
 }) {
   const supabase = useMemo(() => createClient(), []);
   const { pedirConfirmacion, ConfirmModal } = useConfirmDialog();
@@ -99,6 +109,8 @@ export default function IngresosEgresosShell({
     Object.fromEntries(limitesIniciales.map((l) => [l.categoria, l.limite])),
   );
   const [pedidos, setPedidos] = useState<Pedido[]>(pedidosIniciales);
+  const [entregas, setEntregas] = useState<EntregaProveedor[]>(entregasIniciales);
+  const [imputaciones, setImputaciones] = useState<ImputacionPago[]>(imputacionesIniciales);
   const [tab, setTab] = useState(
     initialTab && TABS.some((t) => t.key === initialTab) ? initialTab : "movimientos",
   );
@@ -180,7 +192,102 @@ export default function IngresosEgresosShell({
         return;
       }
       setMovs((prev) => prev.filter((m) => m.id !== id));
+      // En la base las imputaciones se van solas (on delete cascade); acá hay que
+      // sacarlas a mano o la entrega seguiría figurando como pagada.
+      setImputaciones((prev) => prev.filter((im) => im.movimiento_id !== id));
     });
+  }
+
+  async function addEntrega(nueva: NuevaEntregaProveedor) {
+    const { data, error } = await supabase
+      .from("entregas_proveedor")
+      .insert({ ...nueva, creado_por: userId })
+      .select()
+      .single();
+    if (error || !data) {
+      console.error(error);
+      setSaveError("No se pudo guardar la entrega. Probá de nuevo.");
+      return;
+    }
+    setSaveError("");
+    setEntregas((prev) => [...prev, data as EntregaProveedor]);
+  }
+
+  function eliminarEntrega(id: string) {
+    pedirConfirmacion(
+      "¿Eliminar esta entrega? Se van a deshacer también los pagos aplicados a ella (los pagos en sí no se borran).",
+      async () => {
+        const { error } = await supabase.from("entregas_proveedor").delete().eq("id", id);
+        if (error) {
+          setSaveError("No se pudo eliminar la entrega. Probá de nuevo.");
+          return;
+        }
+        setEntregas((prev) => prev.filter((e) => e.id !== id));
+        setImputaciones((prev) => prev.filter((im) => im.entrega_id !== id));
+      },
+    );
+  }
+
+  async function imputarPago(aplicaciones: { movimiento_id: string; entrega_id: string; monto: number }[]) {
+    if (aplicaciones.length === 0) return;
+    const { data, error } = await supabase.from("imputaciones_pago").insert(aplicaciones).select();
+    if (error || !data) {
+      console.error(error);
+      setSaveError(
+        error?.message?.includes("supera")
+          ? "Ese pago ya no tiene tanto saldo disponible, o la entrega ya está cubierta. Recargá la página."
+          : "No se pudo aplicar el pago. Probá de nuevo.",
+      );
+      return;
+    }
+    setSaveError("");
+    setImputaciones((prev) => [...prev, ...(data as ImputacionPago[])]);
+  }
+
+  async function desimputarPago(id: string) {
+    const { error } = await supabase.from("imputaciones_pago").delete().eq("id", id);
+    if (error) {
+      setSaveError("No se pudo deshacer la aplicación. Probá de nuevo.");
+      return;
+    }
+    setSaveError("");
+    setImputaciones((prev) => prev.filter((im) => im.id !== id));
+  }
+
+  /**
+   * Pagar desde la ficha del proveedor: se crea el egreso real en Movimientos (con toda la
+   * maquinaria que ya existe, incluido el cheque si el medio es Cheque) y recién ahí se lo
+   * imputa contra la entrega. Así no hay que cargar el pago dos veces.
+   */
+  async function pagarEntrega({
+    proveedor,
+    entregaId,
+    fecha,
+    monto,
+    medioPago,
+    descripcion,
+  }: {
+    proveedor: string;
+    entregaId: string;
+    fecha: string;
+    monto: number;
+    medioPago: MedioPago;
+    descripcion: string;
+  }) {
+    const mov = await addMov({
+      fecha,
+      descripcion,
+      categoria: "Pago a Proveedor",
+      ingreso: null,
+      egreso: monto,
+      proveedor,
+      medio_pago: medioPago,
+      n_cheque_pago: null,
+      fecha_cobro_cheque_pago: null,
+      gasto_fijo_id: null,
+    });
+    if (!mov) return;
+    await imputarPago([{ movimiento_id: mov.id, entrega_id: entregaId, monto }]);
   }
 
   async function restaurarBackupMovs(nuevosMovs: unknown[], nuevosLimites: Record<string, number>) {
@@ -243,6 +350,10 @@ export default function IngresosEgresosShell({
     setProveedores((prev) => prev.map((p) => (p.id === id ? (data as Proveedor) : p)));
     await supabase.from("movimientos").update({ proveedor: nombreNuevo }).eq("proveedor", nombreViejo);
     setMovs((prev) => prev.map((m) => (m.proveedor === nombreViejo ? { ...m, proveedor: nombreNuevo } : m)));
+    // Las entregas también se vinculan por nombre: si no se renombran acá, la cuenta
+    // corriente se parte en dos proveedores distintos.
+    await supabase.from("entregas_proveedor").update({ proveedor: nombreNuevo }).eq("proveedor", nombreViejo);
+    setEntregas((prev) => prev.map((e) => (e.proveedor === nombreViejo ? { ...e, proveedor: nombreNuevo } : e)));
   }
 
   function eliminarProveedor(id: string) {
@@ -407,7 +518,10 @@ export default function IngresosEgresosShell({
   }
 
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", maxWidth: 1200, margin: "0 auto", padding: 20, color: "#1A1A2E", background: "white", minHeight: "100vh" }}>
+    // minWidth: 0 no es decorativo: este div es hijo de un body flex, y sin él su
+    // min-width:auto lo estira hasta el ancho mínimo de la tabla más ancha, agrandando
+    // el documento entero y dejando botones fuera de la pantalla en móvil.
+    <div style={{ fontFamily: "Arial, sans-serif", maxWidth: 1200, width: "100%", minWidth: 0, margin: "0 auto", padding: 20, color: "#1A1A2E", background: "white", minHeight: "100vh" }}>
       <div
         style={{
           background: RED,
@@ -512,6 +626,20 @@ export default function IngresosEgresosShell({
       )}
       {tab === "dashboard" && <DashboardTab movs={movs} />}
       {tab === "categorias" && <CategoriasTab movs={movs} nombresCategorias={nombresCategorias} limites={limites} onSetLimite={setLimiteCategoria} />}
+      {tab === "cuentaproveedores" && (
+        <CuentaProveedoresTab
+          movs={movs}
+          entregas={entregas}
+          imputaciones={imputaciones}
+          proveedores={proveedores}
+          esAdmin={esAdmin}
+          onAddEntrega={addEntrega}
+          onDeleteEntrega={eliminarEntrega}
+          onPagarEntrega={pagarEntrega}
+          onImputar={imputarPago}
+          onDesimputar={desimputarPago}
+        />
+      )}
       {tab === "proveedores" && <ProveedoresTab movs={movs} />}
       {tab === "mensual" && <MensualTab movs={movs} nombresCategorias={nombresCategorias} />}
       {tab === "cierre" && <CierreTab movs={movs} />}
