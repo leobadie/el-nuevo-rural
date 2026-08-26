@@ -5,6 +5,16 @@ import type { User } from "@supabase/supabase-js";
 
 const PUBLIC_PATHS = ["/login"];
 
+/**
+ * Rutas públicas que se comparan por igual, no por prefijo.
+ *
+ * `/cartel` es la pantalla que corre en los televisores del local: ahí no hay
+ * nadie que escriba una contraseña, así que tiene que abrir sin sesión. Va por
+ * igualdad exacta y no por prefijo a propósito, porque `/cartel/admin` —donde se
+ * cargan y borran las placas— tiene que seguir pidiendo login.
+ */
+const PUBLIC_EXACT_PATHS = ["/cartel"];
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -46,9 +56,11 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
-  const isPublicPath = PUBLIC_PATHS.some((path) =>
-    request.nextUrl.pathname.startsWith(path),
-  );
+  const pathname = request.nextUrl.pathname;
+
+  const isPublicPath =
+    PUBLIC_PATHS.some((path) => pathname.startsWith(path)) ||
+    PUBLIC_EXACT_PATHS.some((path) => pathname === path || pathname === `${path}/`);
 
   if (!user && !isPublicPath) {
     const url = request.nextUrl.clone();
