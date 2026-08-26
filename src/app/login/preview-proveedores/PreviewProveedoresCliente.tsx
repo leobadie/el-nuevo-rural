@@ -55,6 +55,9 @@ function mov(id: string, proveedor: string, fecha: string, egreso: number, descr
   };
 }
 
+/** Corte de prueba: 30 días atrás. Todo lo de arriba se cargó después, así que cuenta. */
+const CORTE = `${d(-30)}T00:00:00.000Z`;
+
 const MOVS_INICIALES: Movimiento[] = [
   // Cargado desde Movimientos, todavía sin aplicar a ninguna entrega.
   mov("m1", "Italiana", d(-4), 60000, "Pago Italiana", "Transferencia"),
@@ -63,6 +66,9 @@ const MOVS_INICIALES: Movimiento[] = [
   // Un ingreso y un egreso sin proveedor: no tienen que aparecer en la cuenta corriente.
   { ...mov("m4", "", d(-1), 5000, "Nafta", "Efectivo"), proveedor: null },
   { ...mov("m5", "Italiana", d(-1), 0, "Nota", "Efectivo"), egreso: null, ingreso: 1000 },
+  // Pago viejo, cargado ANTES del corte: no tiene que contar en la cuenta corriente
+  // aunque sea un egreso con proveedor. Es el caso de los pagos históricos.
+  mov("m6", "Italiana", d(-90), 777000, "Pago viejo Italiana", "Efectivo"),
 ];
 
 const IMPUTACIONES_INICIALES: ImputacionPago[] = [
@@ -82,6 +88,7 @@ export default function PreviewProveedoresCliente() {
   const [movs, setMovs] = useState<Movimiento[]>(MOVS_INICIALES);
   const [entregas, setEntregas] = useState<EntregaProveedor[]>(ENTREGAS_INICIALES);
   const [imputaciones, setImputaciones] = useState<ImputacionPago[]>(IMPUTACIONES_INICIALES);
+  const [corte, setCorte] = useState<string | null>(CORTE);
 
   async function addEntrega(nueva: NuevaEntregaProveedor) {
     setEntregas((prev) => [...prev, { ...nueva, id: nextId(), creado_el: new Date().toISOString(), creado_por: null }]);
@@ -133,11 +140,13 @@ export default function PreviewProveedoresCliente() {
         imputaciones={imputaciones}
         proveedores={PROVEEDORES}
         esAdmin
+        corte={corte}
         onAddEntrega={addEntrega}
         onDeleteEntrega={eliminarEntrega}
         onPagarEntrega={pagarEntrega}
         onImputar={imputar}
         onDesimputar={desimputar}
+        onSetCorte={async (nuevo) => setCorte(nuevo)}
       />
     </div>
   );

@@ -82,12 +82,33 @@ descontando contra ellas.
 - **R6.2** Botón "Aplicar automático": reparte el disponible del pago contra las entregas
   pendientes de la más vieja a la más nueva, hasta agotar uno u otro.
 
+### R8 — Arranque en cero (agregado el 26/08/2026)
+
+Los pagos a proveedor venían cargándose desde mucho antes que las entregas, así que al
+estrenar la pestaña todos los proveedores aparecían con saldo negativo y con toda la plata
+"a cuenta": pagos viejos sin ninguna entrega contra la cual imputarlos. Ruido, no información.
+
+- **R8.1** La cuenta corriente sólo mira lo cargado a partir de una **fecha de corte**. Se
+  compara contra `creado_el` (cuándo se cargó) y no contra `fecha` (a qué día corresponde),
+  para que un pago viejo cargado tarde entre igual en la cuenta.
+- **R8.2** La pantalla dice desde cuándo arranca y cuántos pagos está dejando afuera. El
+  corte es invisible por definición —lo que hace es que algo no aparezca—, así que sin ese
+  aviso alguien va a ver más adelante un saldo que no le cierra y no va a tener con qué
+  explicárselo.
+- **R8.3** **No borra ni oculta nada**: esos movimientos siguen enteros en Movimientos, en el
+  saldo de caja, en los resúmenes y en Rentabilidad. Es un filtro de esta pantalla, y por eso
+  correr el corte para atrás los hace volver a contar.
+- **R8.4** Mover el corte queda reservado al admin: cambia lo que ve todo el mundo.
+
 ### R7 — Verificación
 
 - **R7.1** La app compila (`npm run build`) y pasa el lint sin errores nuevos.
 - **R7.2** Se prueba en un navegador real, no de memoria.
 - **R7.3** Screenshots en desktop y móvil antes de dar la tarea por terminada.
 - **R7.4** El saldo tiene que cerrar: `Entregado − Pagado = Σ saldos de entregas − Σ pagos a cuenta`.
+- **R7.5** Los topes de imputación se verifican también contra la base real, no solo contra la
+  pantalla (`npm run verificar:base-proveedores`): el chequeo del navegador corre sobre datos
+  que pueden estar viejos si hay dos pestañas abiertas.
 
 ## Asunciones
 

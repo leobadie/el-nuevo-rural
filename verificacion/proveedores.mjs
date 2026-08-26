@@ -81,6 +81,17 @@ async function main() {
   check("R2.1", "El egreso sin proveedor y el ingreso no ensucian el saldo de Italiana",
     num(saldos[0]) === 90000, `saldo Italiana: ${saldos[0]}`);
 
+  // ---------- R8: corte de la cuenta corriente ----------
+  // El banco de pruebas tiene un pago de $777.000 a Italiana cargado antes del corte.
+  // Si contara, el saldo de Italiana sería negativo y la deuda total no daría $102.000.
+  check("R8.1", "Un pago cargado antes del corte no cuenta en la cuenta corriente",
+    num(saldos[0]) === 90000 && deudaTotal.trim() === plata(102000),
+    `saldo ${saldos[0]}, deuda total ${deudaTotal}`);
+
+  const aviso = await page.locator('[data-test="aviso-corte"]').innerText();
+  check("R8.2", "La pantalla avisa desde cuándo arranca y cuántos pagos deja afuera",
+    aviso.includes("arranca el") && aviso.includes("1 pago(s)"), aviso.replace(/\s+/g, " ").slice(0, 120));
+
   await page.screenshot({ path: path.join(OUT, "proveedores-lista-desktop.png"), fullPage: true });
 
   // ---------- R4: ficha del proveedor ----------
@@ -174,9 +185,29 @@ async function main() {
   check("R4.2b", "No deja cargar una entrega sin monto",
     (await page.locator('[data-test="entrega-error"]').count()) === 1);
 
-  // ---------- R7.2: móvil ----------
+  // ---------- R8.3: mover el corte para atrás hace reaparecer los pagos viejos ----------
   await page.locator('[data-test="volver-lista"]').click();
   await page.waitForTimeout(200);
+
+  const deudaAntesDelCambio = num(await page.locator('[data-test="deuda-total"]').innerText());
+  await page.locator('[data-test="btn-cambiar-corte"]').click();
+  await page.locator('[data-test="corte-fecha"]').fill("2020-01-01");
+  await page.locator('[data-test="corte-guardar"]').click();
+  await page.waitForTimeout(400);
+  // Ojo: con el pago viejo contando, Italiana queda con saldo negativo y se va al final
+  // del orden, así que hay que buscarla por nombre y no por posición.
+  const filaItaliana = page.locator('[data-test="fila-cuenta"]', { hasText: "Italiana" });
+  const saldoItalianaTrasCorte = num(await filaItaliana.locator('[data-test="cuenta-saldo"]').innerText());
+  check("R8.3", "Correr el corte para atrás hace reaparecer el pago viejo (es un filtro, no un borrado)",
+    saldoItalianaTrasCorte < 0, `saldo Italiana ahora ${saldoItalianaTrasCorte} (antes la deuda total era ${deudaAntesDelCambio})`);
+
+  // Se deja como estaba para no arrastrar el cambio a los checks de móvil.
+  await page.locator('[data-test="btn-cambiar-corte"]').click();
+  await page.locator('[data-test="corte-fecha"]').fill(new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10));
+  await page.locator('[data-test="corte-guardar"]').click();
+  await page.waitForTimeout(300);
+
+  // ---------- R7.2: móvil ----------
   const mobile = await ctx.newPage();
   await mobile.setViewportSize({ width: 390, height: 844 });
   await mobile.goto(URL, { waitUntil: "networkidle" });

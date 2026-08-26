@@ -15,9 +15,19 @@ import type {
 const centavos = (n: unknown): number => Math.round((Number(n) || 0) * 100);
 const pesos = (c: number): number => c / 100;
 
-/** Es pago a un proveedor todo egreso con ese proveedor cargado, sin filtrar por categoría (R2.1). */
-export function esPagoAProveedor(m: Movimiento): boolean {
-  return !!m.proveedor && centavos(m.egreso) > 0;
+/**
+ * Es pago a un proveedor todo egreso con ese proveedor cargado, sin filtrar por categoría (R2.1),
+ * siempre que se haya cargado a partir del corte (R8).
+ *
+ * El corte se compara contra `creado_el` (cuándo se cargó) y no contra `fecha` (a qué día
+ * corresponde): un pago de la semana pasada que se carga hoy tiene que entrar en la cuenta.
+ * Los movimientos anteriores al corte no desaparecen de ningún lado — sólo no los mira esta
+ * pantalla, que no tiene entregas viejas contra las cuales imputarlos.
+ */
+export function esPagoAProveedor(m: Movimiento, corte?: string | null): boolean {
+  if (!m.proveedor || centavos(m.egreso) <= 0) return false;
+  if (corte && m.creado_el && m.creado_el < corte) return false;
+  return true;
 }
 
 function imputadoPorClave(imputaciones: ImputacionPago[], clave: "entrega_id" | "movimiento_id"): Map<string, number> {
@@ -57,10 +67,11 @@ export function pagosConSaldo(
   movs: Movimiento[],
   imputaciones: ImputacionPago[],
   proveedor: string,
+  corte?: string | null,
 ): PagoConSaldo[] {
   const porPago = imputadoPorClave(imputaciones, "movimiento_id");
   return movs
-    .filter((m) => esPagoAProveedor(m) && m.proveedor === proveedor)
+    .filter((m) => esPagoAProveedor(m, corte) && m.proveedor === proveedor)
     .map((m) => {
       const montoC = centavos(m.egreso);
       const imputadoC = Math.min(porPago.get(m.id) ?? 0, montoC);
@@ -85,6 +96,7 @@ export function buildCuentasProveedores(
   entregas: EntregaProveedor[],
   movs: Movimiento[],
   imputaciones: ImputacionPago[],
+  corte?: string | null,
 ): CuentaProveedor[] {
   const porEntrega = imputadoPorClave(imputaciones, "entrega_id");
   const porPago = imputadoPorClave(imputaciones, "movimiento_id");
@@ -102,7 +114,7 @@ export function buildCuentasProveedores(
   });
 
   movs.forEach((m) => {
-    if (!esPagoAProveedor(m)) return;
+    if (!esPagoAProveedor(m, corte)) return;
     const acc = tocar(m.proveedor!);
     const montoC = centavos(m.egreso);
     acc.pagado += montoC;

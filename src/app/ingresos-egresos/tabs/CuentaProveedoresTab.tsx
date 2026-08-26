@@ -5,6 +5,7 @@ import { ArrowLeft, Plus, Trash2, X } from "lucide-react";
 import {
   buildCuentasProveedores,
   entregasConSaldo,
+  esPagoAProveedor,
   pagosConSaldo,
   repartirFIFO,
 } from "@/lib/ingresos-egresos/cuentaProveedores";
@@ -59,17 +60,21 @@ export default function CuentaProveedoresTab({
   imputaciones,
   proveedores,
   esAdmin,
+  corte,
   onAddEntrega,
   onDeleteEntrega,
   onPagarEntrega,
   onImputar,
   onDesimputar,
+  onSetCorte,
 }: {
   movs: Movimiento[];
   entregas: EntregaProveedor[];
   imputaciones: ImputacionPago[];
   proveedores: Proveedor[];
   esAdmin: boolean;
+  corte: string | null;
+  onSetCorte: (corte: string) => Promise<void>;
   onAddEntrega: (nueva: NuevaEntregaProveedor) => Promise<void>;
   onDeleteEntrega: (id: string) => void;
   onPagarEntrega: (datos: {
@@ -86,8 +91,12 @@ export default function CuentaProveedoresTab({
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
 
   const cuentas = useMemo(
-    () => buildCuentasProveedores(entregas, movs, imputaciones),
-    [entregas, movs, imputaciones],
+    () => buildCuentasProveedores(entregas, movs, imputaciones, corte),
+    [entregas, movs, imputaciones, corte],
+  );
+  const pagosOcultos = useMemo(
+    () => (corte ? movs.filter((m) => esPagoAProveedor(m) && !esPagoAProveedor(m, corte)).length : 0),
+    [movs, corte],
   );
   const deudaTotal = useMemo(() => cuentas.reduce((acc, c) => acc + Math.max(c.saldo, 0), 0), [cuentas]);
 
@@ -99,6 +108,7 @@ export default function CuentaProveedoresTab({
         entregas={entregas}
         imputaciones={imputaciones}
         esAdmin={esAdmin}
+        corte={corte}
         onVolver={() => setSeleccionado(null)}
         onAddEntrega={onAddEntrega}
         onDeleteEntrega={onDeleteEntrega}
@@ -121,6 +131,8 @@ export default function CuentaProveedoresTab({
           <div style={{ fontSize: 22, fontWeight: 800, color: "#1A1A2E" }}>{cuentas.filter((c) => c.saldo > 0).length}</div>
         </div>
       </div>
+
+      <AvisoCorte corte={corte} pagosOcultos={pagosOcultos} esAdmin={esAdmin} onSetCorte={onSetCorte} />
 
       <NuevaEntregaForm proveedores={proveedores} onAddEntrega={onAddEntrega} />
 
@@ -180,6 +192,76 @@ export default function CuentaProveedoresTab({
         El saldo es lo entregado menos todo lo que le pagaste. &quot;A cuenta&quot; es plata que ya le diste
         pero que todavía no aplicaste a ninguna entrega: entrá al detalle para aplicarla.
       </p>
+    </div>
+  );
+}
+
+/**
+ * El corte es invisible por definición —lo que hace es que algo no aparezca—, así que si no
+ * se cuenta acá, más adelante alguien va a ver un saldo que no le cierra y no va a tener con
+ * qué explicárselo. Dice cuántos pagos está dejando afuera y deja moverlo, porque es un
+ * filtro reversible y no un borrado.
+ */
+function AvisoCorte({
+  corte,
+  pagosOcultos,
+  esAdmin,
+  onSetCorte,
+}: {
+  corte: string | null;
+  pagosOcultos: number;
+  esAdmin: boolean;
+  onSetCorte: (corte: string) => Promise<void>;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(() => (corte ? corte.slice(0, 10) : hoyISO()));
+
+  if (!corte) return null;
+
+  return (
+    <div style={{ background: "#F8F9FA", border: "1px solid #e0e0e0", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#555" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span data-test="aviso-corte">
+          La cuenta corriente arranca el <strong>{fmtDateIE(corte.slice(0, 10))}</strong>.
+          {pagosOcultos > 0 && (
+            <>
+              {" "}
+              Hay <strong>{pagosOcultos} pago(s)</strong> anteriores que no se cuentan acá — siguen
+              enteros en Movimientos, sólo que no tienen entregas viejas contra las cuales aplicarse.
+            </>
+          )}
+        </span>
+        {esAdmin && !editando && (
+          <button
+            onClick={() => setEditando(true)}
+            style={{ ...botonStyle, background: "transparent", color: RED, padding: "2px 4px", textDecoration: "underline" }}
+            data-test="btn-cambiar-corte"
+          >
+            Cambiar
+          </button>
+        )}
+      </div>
+      {editando && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+          <input type="date" value={valor} onChange={(e) => setValor(e.target.value)} style={{ ...inputStyle, width: "auto" }} data-test="corte-fecha" />
+          <button
+            onClick={async () => {
+              await onSetCorte(new Date(`${valor}T00:00:00`).toISOString());
+              setEditando(false);
+            }}
+            style={{ ...botonStyle, background: RED, color: "white" }}
+            data-test="corte-guardar"
+          >
+            Guardar
+          </button>
+          <button onClick={() => setEditando(false)} style={{ ...botonStyle, background: "#F0F0F0", color: "#1A1A2E" }}>
+            Cancelar
+          </button>
+          <span style={{ fontSize: 11, color: "#888" }}>
+            Moverlo para atrás hace reaparecer los pagos anteriores. No borra ni crea nada.
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -307,6 +389,7 @@ function FichaProveedor({
   entregas,
   imputaciones,
   esAdmin,
+  corte,
   onVolver,
   onAddEntrega,
   onDeleteEntrega,
@@ -319,6 +402,7 @@ function FichaProveedor({
   entregas: EntregaProveedor[];
   imputaciones: ImputacionPago[];
   esAdmin: boolean;
+  corte: string | null;
   onVolver: () => void;
   onAddEntrega: (nueva: NuevaEntregaProveedor) => Promise<void>;
   onDeleteEntrega: (id: string) => void;
@@ -337,7 +421,10 @@ function FichaProveedor({
   const [aplicando, setAplicando] = useState<string | null>(null);
 
   const lista = useMemo(() => entregasConSaldo(entregas, imputaciones, proveedor), [entregas, imputaciones, proveedor]);
-  const pagos = useMemo(() => pagosConSaldo(movs, imputaciones, proveedor), [movs, imputaciones, proveedor]);
+  const pagos = useMemo(
+    () => pagosConSaldo(movs, imputaciones, proveedor, corte),
+    [movs, imputaciones, proveedor, corte],
+  );
   const pendientes = useMemo(() => lista.filter((e) => e.saldo > 0), [lista]);
   const aplicaciones = useMemo(
     () => imputaciones.filter((im) => lista.some((e) => e.id === im.entrega_id)),

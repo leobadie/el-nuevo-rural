@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import IngresosEgresosShell from "./IngresosEgresosShell";
 import type {
   Categoria,
+  ConfigProveedores,
   EntregaProveedor,
   GastoFijo,
   ImputacionPago,
@@ -44,6 +45,7 @@ export default async function IngresosEgresosPage({
     pedidosRes,
     entregasRes,
     imputacionesRes,
+    configProveedoresRes,
   ] = await Promise.all([
     supabase.from("movimientos").select("*").order("creado_el", { ascending: true }),
     supabase.from("ventas_xrp").select("*").order("fecha", { ascending: true }),
@@ -54,6 +56,7 @@ export default async function IngresosEgresosPage({
     supabase.from("pedidos").select("*").order("enviado_el", { ascending: false }),
     supabase.from("entregas_proveedor").select("*").order("fecha", { ascending: true }),
     supabase.from("imputaciones_pago").select("*").order("creado_el", { ascending: true }),
+    supabase.from("config_proveedores").select("*").maybeSingle(),
   ]);
 
   return (
@@ -70,6 +73,7 @@ export default async function IngresosEgresosPage({
       pedidosIniciales={(pedidosRes.data ?? []) as Pedido[]}
       entregasIniciales={(entregasRes.data ?? []) as EntregaProveedor[]}
       imputacionesIniciales={(imputacionesRes.data ?? []) as ImputacionPago[]}
+      configProveedoresInicial={(configProveedoresRes.data ?? null) as ConfigProveedores | null}
     />
   );
 }

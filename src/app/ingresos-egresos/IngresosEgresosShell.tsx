@@ -20,6 +20,7 @@ import PedidosTab from "./tabs/PedidosTab";
 import HistorialTab from "./tabs/HistorialTab";
 import type {
   Categoria,
+  ConfigProveedores,
   EntregaProveedor,
   GastoFijo,
   ImputacionPago,
@@ -83,6 +84,7 @@ export default function IngresosEgresosShell({
   pedidosIniciales,
   entregasIniciales,
   imputacionesIniciales,
+  configProveedoresInicial,
 }: {
   esAdmin: boolean;
   userId: string;
@@ -96,6 +98,7 @@ export default function IngresosEgresosShell({
   pedidosIniciales: Pedido[];
   entregasIniciales: EntregaProveedor[];
   imputacionesIniciales: ImputacionPago[];
+  configProveedoresInicial: ConfigProveedores | null;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const { pedirConfirmacion, ConfirmModal } = useConfirmDialog();
@@ -111,6 +114,7 @@ export default function IngresosEgresosShell({
   const [pedidos, setPedidos] = useState<Pedido[]>(pedidosIniciales);
   const [entregas, setEntregas] = useState<EntregaProveedor[]>(entregasIniciales);
   const [imputaciones, setImputaciones] = useState<ImputacionPago[]>(imputacionesIniciales);
+  const [corte, setCorte] = useState<string | null>(configProveedoresInicial?.corte_cuenta_corriente ?? null);
   const [tab, setTab] = useState(
     initialTab && TABS.some((t) => t.key === initialTab) ? initialTab : "movimientos",
   );
@@ -242,6 +246,26 @@ export default function IngresosEgresosShell({
     }
     setSaveError("");
     setImputaciones((prev) => [...prev, ...(data as ImputacionPago[])]);
+  }
+
+  /**
+   * Mover el corte no toca ningún movimiento: cambia qué mira la cuenta corriente. Por eso
+   * se puede correr para atrás y para adelante sin consecuencias.
+   */
+  async function setCorteCuentaCorriente(nuevo: string) {
+    const { data, error } = await supabase
+      .from("config_proveedores")
+      .update({ corte_cuenta_corriente: nuevo })
+      .eq("id", true)
+      .select()
+      .single();
+    if (error || !data) {
+      console.error(error);
+      setSaveError("No se pudo cambiar la fecha de corte. Probá de nuevo.");
+      return;
+    }
+    setSaveError("");
+    setCorte((data as ConfigProveedores).corte_cuenta_corriente);
   }
 
   async function desimputarPago(id: string) {
@@ -633,11 +657,13 @@ export default function IngresosEgresosShell({
           imputaciones={imputaciones}
           proveedores={proveedores}
           esAdmin={esAdmin}
+          corte={corte}
           onAddEntrega={addEntrega}
           onDeleteEntrega={eliminarEntrega}
           onPagarEntrega={pagarEntrega}
           onImputar={imputarPago}
           onDesimputar={desimputarPago}
+          onSetCorte={setCorteCuentaCorriente}
         />
       )}
       {tab === "proveedores" && <ProveedoresTab movs={movs} />}

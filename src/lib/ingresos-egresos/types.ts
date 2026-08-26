@@ -158,3 +158,11 @@ export interface CuentaProveedor {
   aCuenta: number;
   cantEntregasPendientes: number;
 }
+
+export interface ConfigProveedores {
+  /**
+   * La cuenta corriente sólo mira lo cargado a partir de acá. Los movimientos anteriores
+   * siguen intactos en Movimientos: es un filtro de esa pantalla, no un borrado.
+   */
+  corte_cuenta_corriente: string;
+}
