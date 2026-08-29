@@ -19,7 +19,8 @@
     "verificar:base-proveedores": "node verificacion/base-proveedores.mts",
     "verificar:bcra": "node verificacion/bcra.mjs",
     "cartel:video": "node scripts/generar-video-cartel.mjs",
-    "verificar:base-cartel": "node verificacion/base-cartel.mts"
+    "verificar:base-cartel": "node verificacion/base-cartel.mts",
+    "verificar:pantallas": "node verificacion/pantallas.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
