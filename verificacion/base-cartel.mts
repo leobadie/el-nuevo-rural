@@ -54,11 +54,16 @@ const anon = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE
 });
 
 const MARCA = "__PRUEBA_CLAUDE__";
+/** El slug solo admite minúsculas, números y guiones: no puede llevar la MARCA. */
+const SLUG_PRUEBA = "zz-prueba-claude";
 let idActiva: string | null = null;
 let idApagada: string | null = null;
 
 async function limpiar() {
   await admin.from("cartel_placas").delete().like("titulo", `${MARCA}%`);
+  // Puede no existir todavía (migración 016 sin aplicar): el error se ignora a
+  // propósito para que la limpieza no tape el resultado de los checks.
+  await admin.from("cartel_pantallas").delete().like("slug", `${SLUG_PRUEBA}%`);
 }
 
 try {
@@ -154,6 +159,80 @@ try {
   const cartel = buckets?.find((b: FilaBucket) => b.id === "cartel");
   ok(!eBuckets && !!cartel, "existe el bucket 'cartel'", eBuckets?.message);
   ok(!!cartel?.public, "el bucket es público (si no, el TV no ve las fotos)");
+
+  // ---------------------------------------------------------------- pantallas
+  console.log("\n=== R10 — Las tablas de pantallas existen (migración 016) ===");
+  // Sin head:true a propósito: con head, una tabla inexistente vuelve sin error
+  // y con count en null, así que el check daba verde sobre una base vacía.
+  const { error: ePantallas } = await admin.from("cartel_pantallas").select("slug").limit(1);
+  const { error: ePuente } = await admin.from("cartel_placa_pantalla").select("placa_id").limit(1);
+
+  ok(!ePantallas, "cartel_pantallas existe", ePantallas?.message);
+  ok(!ePuente, "cartel_placa_pantalla existe", ePuente?.message);
+
+  if (ePantallas || ePuente) {
+    console.log("\nFaltan: pegá supabase/016_cartel_pantallas.sql en el editor SQL de Supabase.");
+  } else {
+    console.log("\n=== R11 — El televisor (sin sesión) ve la pantalla encendida, no la apagada ===");
+    await admin.from("cartel_pantallas").delete().like("slug", `${SLUG_PRUEBA}%`);
+    const { error: eAltaP } = await admin.from("cartel_pantallas").insert([
+      { slug: `${SLUG_PRUEBA}-on`, nombre: `${MARCA} on`, activa: true, orden: 9001 },
+      { slug: `${SLUG_PRUEBA}-off`, nombre: `${MARCA} off`, activa: false, orden: 9002 },
+    ]);
+    ok(!eAltaP, "se pudieron crear las pantallas de prueba", eAltaP?.message);
+
+    const { data: vistasP, error: eAnonP } = await anon
+      .from("cartel_pantallas")
+      .select("slug, activa")
+      .like("slug", `${SLUG_PRUEBA}%`);
+
+    ok(!eAnonP, "la lectura anónima de pantallas no da error", eAnonP?.message);
+    ok(
+      !!vistasP?.some((p: { slug: string }) => p.slug === `${SLUG_PRUEBA}-on`),
+      "ve la pantalla encendida (si no, el televisor da 404)",
+    );
+    ok(
+      !vistasP?.some((p: { slug: string }) => p.slug === `${SLUG_PRUEBA}-off`),
+      "no ve la pantalla apagada",
+    );
+
+    console.log("\n=== R12 — Nadie da de alta un televisor sin sesión ===");
+    const { error: eIntrusa } = await anon
+      .from("cartel_pantallas")
+      .insert({ slug: `${SLUG_PRUEBA}-intrusa`, nombre: `${MARCA} intrusa` });
+    // Que falle no alcanza: si fallara porque la tabla no existe, el check daría
+    // verde sin haber probado ninguna política.
+    ok(
+      !!eIntrusa && !eIntrusa.message.includes("schema cache"),
+      "el insert anónimo de pantalla lo rechaza RLS",
+      eIntrusa?.message ?? "¡ENTRÓ! revisá las políticas",
+    );
+
+    console.log("\n=== R13 — Borrar una pantalla se lleva sus asignaciones ===");
+    // Si al dar de baja un televisor quedaran filas colgadas en la tabla puente,
+    // una placa seguiría figurando como "solo en esa pantalla" para siempre y
+    // no volvería a mostrarse en ningún lado.
+    if (idActiva) {
+      const { error: eAsig } = await admin
+        .from("cartel_placa_pantalla")
+        .insert({ placa_id: idActiva, pantalla_slug: `${SLUG_PRUEBA}-on` });
+
+      await admin.from("cartel_pantallas").delete().eq("slug", `${SLUG_PRUEBA}-on`);
+
+      const { data: colgadas, error: eColgadas } = await admin
+        .from("cartel_placa_pantalla")
+        .select("placa_id")
+        .eq("pantalla_slug", `${SLUG_PRUEBA}-on`);
+
+      // Se exige que la asignación se haya podido crear y leer: sin eso, "cero
+      // filas colgadas" sería cierto por no haber probado nada.
+      ok(
+        !eAsig && !eColgadas && colgadas?.length === 0,
+        "la asignación se borró en cascada al borrar la pantalla",
+        eAsig?.message ?? eColgadas?.message ?? `quedaron ${colgadas?.length ?? "?"} fila(s)`,
+      );
+    }
+  }
 } finally {
   await limpiar();
 }

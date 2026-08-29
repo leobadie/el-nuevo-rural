@@ -15,6 +15,18 @@ const PUBLIC_PATHS = ["/login"];
  */
 const PUBLIC_EXACT_PATHS = ["/cartel"];
 
+/**
+ * La pantalla de un televisor concreto: /cartel/tv/carniceria-1
+ *
+ * Va por patrón y no abriendo el prefijo `/cartel/` justamente para no dejar
+ * entrar a `/cartel/admin`: el segmento `tv/` es obligatorio y el slug solo
+ * admite minúsculas, números y guiones, así que `/cartel/admin` no matchea por
+ * ninguna vía. Cualquier cambio acá hay que verificarlo contra producción, no
+ * de memoria: es lo único que separa las ofertas del televisor del panel donde
+ * se cargan y se borran.
+ */
+const PUBLIC_PATTERNS = [/^\/cartel\/tv\/[a-z0-9]+(-[a-z0-9]+)*\/?$/];
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -60,7 +72,8 @@ export async function updateSession(request: NextRequest) {
 
   const isPublicPath =
     PUBLIC_PATHS.some((path) => pathname.startsWith(path)) ||
-    PUBLIC_EXACT_PATHS.some((path) => pathname === path || pathname === `${path}/`);
+    PUBLIC_EXACT_PATHS.some((path) => pathname === path || pathname === `${path}/`) ||
+    PUBLIC_PATTERNS.some((patron) => patron.test(pathname));
 
   if (!user && !isPublicPath) {
     const url = request.nextUrl.clone();

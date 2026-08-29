@@ -16,6 +16,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useConfirmDialog } from "@/app/useConfirmDialog";
 import PlacaVista from "../PlacaVista";
+import PantallasPanel from "./PantallasPanel";
 import {
   NARANJA,
   NAVY,
@@ -25,7 +26,7 @@ import {
   hoyISO,
   estaVigente,
 } from "@/lib/cartel/placas";
-import type { Placa, TipoPlaca } from "@/lib/cartel/types";
+import type { Asignacion, Pantalla, Placa, TipoPlaca } from "@/lib/cartel/types";
 
 const COLORES = [
   { nombre: "Azul (marca)", valor: NAVY },
@@ -50,6 +51,8 @@ type Form = {
   duracion_seg: string;
   orden: string;
   activa: boolean;
+  /** Televisores elegidos. Vacío = va a todos los que coincidan por sección. */
+  pantallas: string[];
 };
 
 const FORM_VACIO: Form = {
@@ -67,6 +70,7 @@ const FORM_VACIO: Form = {
   duracion_seg: "8",
   orden: "0",
   activa: true,
+  pantallas: [],
 };
 
 /** "1.234,50" y "1234.50" tienen que valer lo mismo: acá se carga a mano y rápido. */
@@ -77,8 +81,9 @@ function aNumero(texto: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function formDesde(placa: Placa): Form {
+function formDesde(placa: Placa, asignaciones: Asignacion[]): Form {
   return {
+    pantallas: asignaciones.filter((a) => a.placa_id === placa.id).map((a) => a.pantalla_slug),
     tipo: placa.tipo,
     seccion: placa.seccion ?? "",
     titulo: placa.titulo,
@@ -98,10 +103,14 @@ function formDesde(placa: Placa): Form {
 
 export default function AdminShell({
   placasIniciales,
+  pantallasIniciales,
+  asignacionesIniciales,
   userId,
   errorInicial,
 }: {
   placasIniciales: Placa[];
+  pantallasIniciales: Pantalla[];
+  asignacionesIniciales: Asignacion[];
   userId: string;
   errorInicial: string | null;
 }) {
@@ -109,6 +118,7 @@ export default function AdminShell({
   const { pedirConfirmacion, ConfirmModal } = useConfirmDialog();
 
   const [placas, setPlacas] = useState<Placa[]>(placasIniciales);
+  const [asignaciones, setAsignaciones] = useState<Asignacion[]>(asignacionesIniciales);
   const [editando, setEditando] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(FORM_VACIO);
   const [error, setError] = useState<string | null>(errorInicial);
@@ -187,6 +197,8 @@ export default function AdminShell({
     setError(null);
 
     try {
+      let placaId = editando;
+
       if (editando) {
         const { data, error: e } = await supabase
           .from("cartel_placas")
@@ -206,15 +218,48 @@ export default function AdminShell({
           .single();
 
         if (e) throw e;
+        placaId = (data as Placa).id;
         setPlacas((ps) => [...ps, data as Placa]);
         setAviso("Placa creada. Los televisores la toman en 5 minutos como máximo.");
       }
+
+      if (placaId) await guardarAsignacion(placaId, form.pantallas);
       limpiar();
     } catch (e) {
       setError(`No se pudo guardar: ${(e as Error).message}`);
     } finally {
       setGuardando(false);
     }
+  }
+
+  /**
+   * Deja la asignación de una placa exactamente en los televisores elegidos.
+   *
+   * Se borra todo y se reinserta en vez de calcular el diff: son un puñado de
+   * filas por placa, y un diff mal hecho deja una oferta colgada en un televisor
+   * del que se la quiso sacar. Lista vacía = sin filas = la placa vuelve a
+   * mostrarse en todos los que coincidan por sección.
+   */
+  async function guardarAsignacion(placaId: string, slugs: string[]) {
+    const { error: eBorrado } = await supabase
+      .from("cartel_placa_pantalla")
+      .delete()
+      .eq("placa_id", placaId);
+
+    if (eBorrado) throw eBorrado;
+
+    if (slugs.length > 0) {
+      const { error: eAlta } = await supabase
+        .from("cartel_placa_pantalla")
+        .insert(slugs.map((s) => ({ placa_id: placaId, pantalla_slug: s })));
+
+      if (eAlta) throw eAlta;
+    }
+
+    setAsignaciones((as) => [
+      ...as.filter((a) => a.placa_id !== placaId),
+      ...slugs.map((s) => ({ placa_id: placaId, pantalla_slug: s })),
+    ]);
   }
 
   function borrar(placa: Placa) {
@@ -336,6 +381,13 @@ export default function AdminShell({
         {error && <Banner tono="error" texto={error} onCerrar={() => setError(null)} />}
         {aviso && <Banner tono="ok" texto={aviso} onCerrar={() => setAviso(null)} />}
 
+        <PantallasPanel
+          pantallasIniciales={pantallasIniciales}
+          userId={userId}
+          onError={setError}
+          onAviso={setAviso}
+        />
+
         <div
           style={{
             display: "grid",
@@ -424,7 +476,7 @@ export default function AdminShell({
                       <button
                         onClick={() => {
                           setEditando(p.id);
-                          setForm(formDesde(p));
+                          setForm(formDesde(p, asignaciones));
                           setAviso(null);
                           setError(null);
                         }}
@@ -475,6 +527,53 @@ export default function AdminShell({
                     ))}
                   </datalist>
                 </Campo>
+
+                {pantallasIniciales.length > 0 && (
+                  <Campo etiqueta="¿En qué televisores?">
+                    {/* Ninguno tildado = la placa va a todos los que coincidan
+                        por sección, que es como se venía comportando antes de
+                        que existieran las pantallas. Tildar es acotar. */}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {pantallasIniciales
+                        .slice()
+                        .sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, "es"))
+                        .map((p) => {
+                          const elegida = form.pantallas.includes(p.slug);
+                          return (
+                            <button
+                              type="button"
+                              key={p.slug}
+                              onClick={() =>
+                                set(
+                                  "pantallas",
+                                  elegida
+                                    ? form.pantallas.filter((s) => s !== p.slug)
+                                    : [...form.pantallas, p.slug],
+                                )
+                              }
+                              style={{
+                                border: `1px solid ${elegida ? NAVY : "#CBD5E1"}`,
+                                background: elegida ? NAVY : "#fff",
+                                color: elegida ? "#fff" : "#475569",
+                                borderRadius: 999,
+                                padding: "5px 11px",
+                                fontSize: 13,
+                                fontWeight: 600,
+                                cursor: "pointer",
+                              }}
+                            >
+                              {p.nombre}
+                            </button>
+                          );
+                        })}
+                    </div>
+                    <p style={{ fontSize: 12, color: "#64748B", margin: "6px 0 0" }}>
+                      {form.pantallas.length === 0
+                        ? "Sin elegir ninguno va a todos los televisores del sector."
+                        : `Solo en ${form.pantallas.length} televisor(es).`}
+                    </p>
+                  </Campo>
+                )}
 
                 <Campo etiqueta={form.tipo === "oferta" ? "Producto" : "Título"}>
                   <input
