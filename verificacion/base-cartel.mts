@@ -18,6 +18,10 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
+/* Supabase devuelve las filas sin tipar; describimos sólo los campos que miramos acá. */
+type FilaPlaca = { id: string; titulo: string };
+type FilaBucket = { id: string; public: boolean };
+
 let fallos = 0;
 function ok(cond: boolean, desc: string, detalle: string | number = "") {
   console.log(`${cond ? "PASS" : "FAIL"}  ${desc}${detalle !== "" ? `  → ${detalle}` : ""}`);
@@ -79,8 +83,8 @@ try {
     .select();
 
   ok(!eInsert && creadas?.length === 2, "se pudieron crear las placas de prueba", eInsert?.message);
-  idActiva = creadas?.find((p: any) => p.titulo.endsWith("activa"))?.id ?? null;
-  idApagada = creadas?.find((p: any) => p.titulo.endsWith("apagada"))?.id ?? null;
+  idActiva = creadas?.find((p: FilaPlaca) => p.titulo.endsWith("activa"))?.id ?? null;
+  idApagada = creadas?.find((p: FilaPlaca) => p.titulo.endsWith("apagada"))?.id ?? null;
 
   console.log("\n=== R3 — El televisor (sin sesión) ve las placas activas ===");
   const { data: vistas, error: eAnon } = await anon
@@ -90,14 +94,14 @@ try {
 
   ok(!eAnon, "la lectura anónima no da error", eAnon?.message);
   ok(
-    !!vistas?.some((p: any) => p.id === idActiva),
+    !!vistas?.some((p: FilaPlaca) => p.id === idActiva),
     "ve la placa encendida (si no, el TV queda sin ofertas)",
     `devolvió ${vistas?.length ?? 0} fila(s)`,
   );
 
   console.log("\n=== R4 — Pero no ve las apagadas ===");
   ok(
-    !vistas?.some((p: any) => p.id === idApagada),
+    !vistas?.some((p: FilaPlaca) => p.id === idApagada),
     "la placa apagada no se filtra a quien no tiene sesión",
   );
 
@@ -147,7 +151,7 @@ try {
 
   console.log("\n=== R9 — El bucket de fotos existe y es público ===");
   const { data: buckets, error: eBuckets } = await admin.storage.listBuckets();
-  const cartel = buckets?.find((b: any) => b.id === "cartel");
+  const cartel = buckets?.find((b: FilaBucket) => b.id === "cartel");
   ok(!eBuckets && !!cartel, "existe el bucket 'cartel'", eBuckets?.message);
   ok(!!cartel?.public, "el bucket es público (si no, el TV no ve las fotos)");
 } finally {
