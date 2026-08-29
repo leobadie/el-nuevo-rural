@@ -16,7 +16,15 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useConfirmDialog } from "@/app/useConfirmDialog";
 import PlacaVista from "../PlacaVista";
-import { NARANJA, NAVY, VERDE, fmtPrecio, hoyISO, estaVigente } from "@/lib/cartel/placas";
+import {
+  NARANJA,
+  NAVY,
+  SECCIONES_SUGERIDAS,
+  VERDE,
+  fmtPrecio,
+  hoyISO,
+  estaVigente,
+} from "@/lib/cartel/placas";
 import type { Placa, TipoPlaca } from "@/lib/cartel/types";
 
 const COLORES = [
@@ -29,6 +37,7 @@ const COLORES = [
 
 type Form = {
   tipo: TipoPlaca;
+  seccion: string;
   titulo: string;
   bajada: string;
   precio: string;
@@ -45,6 +54,7 @@ type Form = {
 
 const FORM_VACIO: Form = {
   tipo: "oferta",
+  seccion: "",
   titulo: "",
   bajada: "",
   precio: "",
@@ -70,6 +80,7 @@ function aNumero(texto: string): number | null {
 function formDesde(placa: Placa): Form {
   return {
     tipo: placa.tipo,
+    seccion: placa.seccion ?? "",
     titulo: placa.titulo,
     bajada: placa.bajada ?? "",
     precio: placa.precio != null ? String(placa.precio) : "",
@@ -115,6 +126,7 @@ export default function AdminShell({
   const previa: Placa = {
     id: "previa",
     tipo: form.tipo,
+    seccion: form.seccion.trim() || null,
     titulo: form.titulo.trim() || "Título de la placa",
     bajada: form.bajada.trim() || null,
     precio: aNumero(form.precio),
@@ -145,6 +157,10 @@ export default function AdminShell({
       setError("Poné un título: es lo que se lee de lejos en el televisor.");
       return;
     }
+    if (form.tipo === "imagen" && !form.imagen_url.trim()) {
+      setError("Un cartel ya diseñado es la imagen: sin foto la pantalla queda en negro.");
+      return;
+    }
     if (form.vigencia_desde && form.vigencia_hasta && form.vigencia_hasta < form.vigencia_desde) {
       setError("La vigencia termina antes de empezar: la placa no se vería nunca.");
       return;
@@ -152,6 +168,7 @@ export default function AdminShell({
 
     const payload = {
       tipo: form.tipo,
+      seccion: form.seccion.trim() || null,
       titulo,
       bajada: form.bajada.trim() || null,
       precio: aNumero(form.precio),
@@ -377,7 +394,7 @@ export default function AdminShell({
                         {p.titulo}
                       </div>
                       <div style={{ fontSize: 11, color: "#777", marginTop: 2 }}>
-                        {p.tipo}
+                        {p.seccion ? `${p.seccion} · ${p.tipo}` : `${p.tipo} · todas las pantallas`}
                         {p.precio != null && ` · ${fmtPrecio(p.precio)}`}
                         {` · ${p.duracion_seg}s`}
                         {!p.activa && " · apagada"}
@@ -436,9 +453,27 @@ export default function AdminShell({
                 <Campo etiqueta="Tipo">
                   <select value={form.tipo} onChange={(e) => set("tipo", e.target.value as TipoPlaca)} style={input}>
                     <option value="oferta">Oferta con precio</option>
+                    <option value="imagen">Cartel ya diseñado (imagen sola)</option>
                     <option value="institucional">Institucional</option>
                     <option value="aviso">Aviso</option>
                   </select>
+                </Campo>
+
+                <Campo etiqueta="Sección del local">
+                  {/* Lista abierta: se sugieren las de siempre, pero se puede
+                      escribir una nueva sin tocar la base ni el código. */}
+                  <input
+                    value={form.seccion}
+                    onChange={(e) => set("seccion", e.target.value)}
+                    list="secciones-cartel"
+                    placeholder="Carnicería (vacío = se ve en todas las pantallas)"
+                    style={input}
+                  />
+                  <datalist id="secciones-cartel">
+                    {SECCIONES_SUGERIDAS.map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
                 </Campo>
 
                 <Campo etiqueta={form.tipo === "oferta" ? "Producto" : "Título"}>

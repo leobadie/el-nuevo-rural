@@ -3,8 +3,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import PlacaVista from "./PlacaVista";
-import { NAVY, duracionMs, hoyISO, placasParaMostrar } from "@/lib/cartel/placas";
-import type { Placa } from "@/lib/cartel/types";
+import {
+  NAVY,
+  colorDePlaca,
+  duracionMs,
+  hoyISO,
+  placasDePantalla,
+  placasParaMostrar,
+} from "@/lib/cartel/placas";
+
+import type { Asignacion, Pantalla, Placa } from "@/lib/cartel/types";
+
+/** Azul de fondo cuando el color fuerte lo lleva la franja de sección. */
+const FONDO_BASE = "#12203c";
 
 /** Cada cuánto el televisor vuelve a preguntar por las ofertas. */
 const REFRESCO_MS = 5 * 60 * 1000;
@@ -12,21 +23,40 @@ const REFRESCO_MS = 5 * 60 * 1000;
 export default function CartelPantalla({
   placasIniciales,
   indiceFijo = null,
+  seccion = null,
+  pantalla = null,
+  asignacionesIniciales = [],
 }: {
   placasIniciales: Placa[];
   /** Con un índice, la pantalla se queda quieta en esa placa (modo captura). */
   indiceFijo?: number | null;
+  /** Sector del local: solo se muestran sus placas y las que no tienen sección. */
+  seccion?: string | null;
+  /**
+   * El televisor concreto que está mostrando esto. Con pantalla manda la regla
+   * de asignaciones; sin ella se cae al filtro por sección de siempre, que es
+   * lo que usan `/cartel` y el generador de video.
+   */
+  pantalla?: Pantalla | null;
+  asignacionesIniciales?: Asignacion[];
 }) {
   const [crudas, setCrudas] = useState<Placa[]>(placasIniciales);
+  const [asignaciones, setAsignaciones] = useState<Asignacion[]>(asignacionesIniciales);
   const [hoy, setHoy] = useState(() => hoyISO());
   const [indice, setIndice] = useState(0);
   const [hora, setHora] = useState<string | null>(null);
 
   const modoCaptura = indiceFijo != null;
 
-  // placasParaMostrar filtra por vigencia y, si no queda nada, devuelve las de
+  // Las dos funciones filtran por vigencia y, si no queda nada, devuelven las de
   // demostración: la lista nunca viene vacía, así que el TV nunca queda negro.
-  const placas = useMemo(() => placasParaMostrar(crudas, hoy), [crudas, hoy]);
+  const placas = useMemo(
+    () =>
+      pantalla
+        ? placasDePantalla(crudas, asignaciones, pantalla, hoy)
+        : placasParaMostrar(crudas, hoy, seccion),
+    [crudas, asignaciones, pantalla, hoy, seccion],
+  );
 
   const posicion =
     placas.length > 0 ? ((modoCaptura ? indiceFijo! : indice) % placas.length + placas.length) % placas.length : 0;
@@ -82,6 +112,18 @@ export default function CartelPantalla({
         return;
       }
       if (data) setCrudas(data as Placa[]);
+
+      // Las asignaciones se releen en la misma vuelta: si no, mover una oferta
+      // de un televisor a otro desde el admin no se vería hasta reiniciar el TV.
+      // Solo hace falta cuando esta pantalla es un televisor concreto.
+      if (pantalla) {
+        const { data: asig, error: eAsig } = await supabase
+          .from("cartel_placa_pantalla")
+          .select("placa_id, pantalla_slug");
+
+        if (eAsig) console.error("cartel: refresco de asignaciones fallido:", eAsig.message);
+        else if (asig) setAsignaciones(asig as Asignacion[]);
+      }
     } catch (e) {
       console.error("cartel: refresco fallido:", e);
     } finally {
@@ -89,7 +131,7 @@ export default function CartelPantalla({
       // medianoche desaparezca sola, con el televisor prendido.
       setHoy(hoyISO());
     }
-  }, []);
+  }, [pantalla]);
 
   useEffect(() => {
     // En modo captura la lista no se toca: si entrara un refresco a mitad de la
@@ -104,29 +146,63 @@ export default function CartelPantalla({
 
   return (
     <div className="cartel-fondo">
+      {/* Con sección, el color fuerte va en la franja de arriba y no en toda la
+          placa: un fondo rojo a pantalla completa cansa la vista y le come
+          protagonismo al precio. */}
       <div
         className="cartel-marco"
-        style={{ background: placa.color || NAVY }}
+        style={{
+          background:
+            // Negro detrás de un cartel ajeno: el azul de la marca chocaría con
+            // el color que traiga la imagen.
+            placa.tipo === "imagen" ? "#000" : placa.seccion ? FONDO_BASE : placa.color || NAVY,
+        }}
         data-placa={placa.id}
         data-total={placas.length}
         data-duracion={duracionMs(placa)}
       >
-        <header className="cartel-header">
-          <div className="cartel-marca">
-            {/* eslint-disable-next-line @next/next/no-img-element -- el TV pide
-                la imagen directo: una capa de optimización de por medio es un
-                punto más donde la pantalla se puede quedar sin logo. */}
-            <img className="cartel-logo" src="/logo.jpg" alt="" />
-            <span className="cartel-marca-texto">
-              El Nuevo
-              <br />
-              Rural
-            </span>
-          </div>
+        {/* El encabezado hace de franja de sección: pintado con el color del
+            sector, dice desde lejos si lo que se muestra es de carnicería o de
+            verdulería. Sin sección se comporta como antes. */}
+        {placa.tipo !== "imagen" && (
+        <header
+          className="cartel-header"
+          style={placa.seccion ? { background: colorDePlaca(placa) } : undefined}
+        >
+          {placa.seccion ? (
+            <span className="cartel-seccion">{placa.seccion}</span>
+          ) : (
+            <div className="cartel-marca">
+              {/* eslint-disable-next-line @next/next/no-img-element -- el TV pide
+                  la imagen directo: una capa de optimización de por medio es un
+                  punto más donde la pantalla se puede quedar sin logo. */}
+              <img className="cartel-logo" src="/logo.jpg" alt="" />
+              <span className="cartel-marca-texto">
+                El Nuevo
+                <br />
+                Rural
+              </span>
+            </div>
+          )}
+
+          {placa.seccion && (
+            <div className="cartel-marca cartel-marca-derecha">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img className="cartel-logo" src="/logo.jpg" alt="" />
+              <span className="cartel-marca-texto">
+                El Nuevo
+                <br />
+                Rural
+              </span>
+            </div>
+          )}
           {/* En un video grabado el reloj queda congelado: mostraría una hora
-              equivocada toda la tarde, así que en modo captura no va. */}
-          {!modoCaptura && <span className="cartel-hora">{hora ?? ""}</span>}
+              equivocada toda la tarde, así que en modo captura no va. Y con
+              sección tampoco: la franja ya lleva el sector y la marca, y un
+              tercer dato ahí adentro solo ensucia. */}
+          {!modoCaptura && !placa.seccion && <span className="cartel-hora">{hora ?? ""}</span>}
         </header>
+        )}
 
         <main className="cartel-cuerpo">
           {/* La key fuerza el remontaje en cada cambio: sin eso la animación de
@@ -136,7 +212,7 @@ export default function CartelPantalla({
 
         {/* El pie marca cuánto falta para la próxima placa. En el video el corte
             lo hace el propio video, así que una barra quieta solo confunde. */}
-        {!modoCaptura && (
+        {!modoCaptura && placa.tipo !== "imagen" && (
         <footer className="cartel-pie">
           <div className="cartel-progreso">
             <div

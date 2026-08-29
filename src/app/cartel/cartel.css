@@ -293,3 +293,181 @@
   background: #fff;
   transform: scale(1.35);
 }
+
+/* ====================================================================
+   Placa de oferta, diseño "foto a sangre" (variante A).
+
+   El contenido usa los 1920px: franja de sección arriba, foto sin
+   márgenes, precio grande abajo y un pie con la unidad y la vigencia.
+   Cuando la placa no tiene foto —y muchas no la tienen— el bloque de
+   datos se estira y ocupa ese lugar, así que la placa no se rompe.
+   ==================================================================== */
+
+.of {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  animation: cartel-entrar 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.of-foto {
+  position: relative;
+  flex: 0 0 calc(var(--u) * 820);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.of-foto img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* La cinta de descuento va sobre la foto, como en los carteles de góndola. */
+.of-cinta {
+  position: absolute;
+  top: calc(var(--u) * 40);
+  right: calc(var(--u) * 40);
+  background: #ffd400;
+  color: #1a1a2e;
+  padding: calc(var(--u) * 18) calc(var(--u) * 34);
+  border-radius: calc(var(--u) * 18);
+  font-size: calc(var(--u) * 58);
+  font-weight: 900;
+  box-shadow: 0 calc(var(--u) * 8) calc(var(--u) * 26) rgba(0, 0, 0, 0.35);
+}
+
+.of-datos {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: calc(var(--u) * 40) calc(var(--u) * 50);
+}
+
+.of-titulo {
+  font-size: calc(var(--u) * 104);
+  font-weight: 800;
+  line-height: 1.04;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.of-titulo-largo {
+  font-size: calc(var(--u) * 74);
+}
+
+.of-antes {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 22);
+  margin-top: calc(var(--u) * 22);
+}
+
+.of-tachado {
+  font-size: calc(var(--u) * 54);
+  font-weight: 600;
+  opacity: 0.72;
+  text-decoration: line-through;
+  text-decoration-thickness: calc(var(--u) * 5);
+}
+
+/* Sin foto no hay dónde apoyar la cinta, así que el descuento va acá. */
+.of-off-inline {
+  background: #ffd400;
+  color: #1a1a2e;
+  padding: calc(var(--u) * 10) calc(var(--u) * 26);
+  border-radius: calc(var(--u) * 16);
+  font-size: calc(var(--u) * 46);
+  font-weight: 900;
+}
+
+.of-precio {
+  font-size: calc(var(--u) * 240);
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: calc(var(--u) * -8);
+  font-variant-numeric: tabular-nums;
+  margin-top: calc(var(--u) * 14);
+  text-shadow: 0 calc(var(--u) * 8) calc(var(--u) * 30) rgba(0, 0, 0, 0.3);
+}
+
+/* Un precio de seis cifras a 240u se sale de los 1080px de ancho. */
+.of-precio-largo {
+  font-size: calc(var(--u) * 168);
+  letter-spacing: calc(var(--u) * -5);
+}
+
+.of-pie {
+  flex: 0 0 auto;
+  background: rgba(0, 0, 0, 0.26);
+  padding: calc(var(--u) * 30) calc(var(--u) * 50);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 24);
+  font-size: calc(var(--u) * 40);
+  font-weight: 700;
+}
+
+.of-pie-vacio {
+  background: none;
+}
+
+/* Nombre del sector en la franja superior. Es lo primero que se lee al pasar. */
+.cartel-seccion {
+  font-size: calc(var(--u) * 56);
+  font-weight: 900;
+  letter-spacing: calc(var(--u) * 4);
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+/* Con sección, la marca pasa a la derecha y cede el lugar principal al sector. */
+.cartel-marca-derecha {
+  text-align: right;
+  flex-direction: row-reverse;
+}
+
+/* Cartel ya diseñado, a pantalla completa. */
+.pl-imagen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: cartel-entrar 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.pl-imagen img {
+  width: 100%;
+  height: 100%;
+  /* contain y no cover: recortar un cartel puede tapar justo el precio. */
+  object-fit: contain;
+}
+
+/* Sin foto el precio queda solo en 1920px de alto: se reparte el espacio y se
+   agranda el texto, en vez de dejar el bloque flotando en el medio. */
+.of-sin-foto {
+  justify-content: space-evenly;
+}
+
+.of-sin-foto .of-titulo {
+  font-size: calc(var(--u) * 128);
+}
+
+.of-sin-foto .of-titulo-largo {
+  font-size: calc(var(--u) * 92);
+}
+
+.of-sin-foto .of-tachado {
+  font-size: calc(var(--u) * 64);
+}
+
+.of-sin-foto .of-off-inline {
+  font-size: calc(var(--u) * 54);
+}

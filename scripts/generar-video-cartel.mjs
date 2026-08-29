@@ -23,6 +23,11 @@
  * Opciones:
  *   --url <url>       de dónde leer el cartel (por defecto http://localhost:3000/cartel)
  *   --salida <dir>    carpeta de salida (por defecto ./cartel-salida)
+ *   --seccion <nombre>  genera un juego aparte con las placas de ese sector (más
+ *                     las que no tienen sección, que sirven para todo el local).
+ *                     Se puede repetir, y así el TV de la carnicería y el de la
+ *                     entrada reciben archivos distintos:
+ *                       npm run cartel:video -- --seccion Carnicería --seccion Almacén
  *   --rotar <grados>  además del vertical, genera una copia rotada: 90, 180 o 270.
  *                     Se puede repetir. Sirve para los televisores que están
  *                     puestos de costado y cuyo reproductor no rota la imagen.
@@ -59,12 +64,19 @@ const ALTO = 1920;
 
 // ---------------------------------------------------------------- argumentos
 function leerArgs(argv) {
-  const args = { url: "http://localhost:3000/cartel", salida: "cartel-salida", rotar: [], fps: 25 };
+  const args = {
+    url: "http://localhost:3000/cartel",
+    salida: "cartel-salida",
+    rotar: [],
+    secciones: [],
+    fps: 25,
+  };
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--url") args.url = argv[++i];
     else if (a === "--salida") args.salida = argv[++i];
+    else if (a === "--seccion") args.secciones.push(argv[++i]);
     else if (a === "--fps") args.fps = Number(argv[++i]) || 25;
     else if (a === "--rotar") {
       const g = Number(argv[++i]);
@@ -168,6 +180,16 @@ function buscarFfmpeg() {
   return null;
 }
 
+/** "Carnicería" -> "carniceria", para usarlo en nombres de archivo y carpetas. */
+function normalizarNombre(texto) {
+  return texto
+    .trim()
+    .toLowerCase()
+    .replace(/[áéíóúüñ]/g, (c) => ({ á: "a", é: "e", í: "i", ó: "o", ú: "u", ü: "u", ñ: "n" })[c])
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function filtroDeRotacion(grados) {
   // transpose=1 gira 90° en sentido horario; 2, antihorario.
   if (grados === 90) return "transpose=1";
@@ -216,47 +238,62 @@ function armarVideo({ ffmpeg, placas, destino, fps, grados }) {
 
 // --------------------------------------------------------------------- main
 const args = leerArgs(process.argv.slice(2));
-const dirSalida = path.resolve(args.salida);
-const dirPlacas = path.join(dirSalida, "placas");
-
-fs.mkdirSync(dirPlacas, { recursive: true });
-
-const placas = await capturarPlacas({ url: args.url, dirPlacas });
-const duracionTotal = placas.reduce((t, p) => t + p.segundos, 0);
-
-console.log(`\nImágenes listas en ${dirPlacas}`);
-console.log(`Duración del loop: ${duracionTotal} segundos.`);
-
+const dirBase = path.resolve(args.salida);
 const ffmpeg = buscarFfmpeg();
+
+// Sin --seccion se genera un único juego con todo, como antes. Con secciones,
+// cada grupo de televisores tiene su carpeta y su archivo.
+const grupos = args.secciones.length > 0 ? args.secciones : [null];
+
+let fallo = false;
+
+for (const seccion of grupos) {
+  const etiqueta = seccion ? seccion : "todas las placas";
+  const carpeta = seccion ? `seccion-${normalizarNombre(seccion)}` : "placas";
+
+  console.log(`\n=== ${etiqueta} ===`);
+
+  const dirSalida = seccion ? path.join(dirBase, carpeta) : dirBase;
+  const dirPlacas = seccion ? dirSalida : path.join(dirBase, "placas");
+  fs.mkdirSync(dirPlacas, { recursive: true });
+
+  const url = seccion
+    ? `${args.url}${args.url.includes("?") ? "&" : "?"}seccion=${encodeURIComponent(seccion)}`
+    : args.url;
+
+  const placas = await capturarPlacas({ url, dirPlacas });
+  const duracionTotal = placas.reduce((t, p) => t + p.segundos, 0);
+  console.log(`  ${placas.length} imagen(es) en ${dirPlacas} — loop de ${duracionTotal}s`);
+
+  if (!ffmpeg) continue;
+
+  const sufijo = seccion ? `-${normalizarNombre(seccion)}` : "";
+  const salidas = [{ grados: 0, nombre: `cartel${sufijo}-${ANCHO}x${ALTO}.mp4` }].concat(
+    args.rotar.map((g) => ({ grados: g, nombre: `cartel${sufijo}-rotado-${g}.mp4` })),
+  );
+
+  for (const s of salidas) {
+    const destino = path.join(dirSalida, s.nombre);
+    process.stdout.write(`  · ${s.nombre} … `);
+    if (armarVideo({ ffmpeg, placas, destino, fps: args.fps, grados: s.grados })) {
+      console.log(`ok (${(fs.statSync(destino).size / 1024 / 1024).toFixed(1)} MB)`);
+    } else {
+      fallo = true;
+    }
+  }
+}
 
 if (!ffmpeg) {
   console.log(
     "\nNo encontré un ffmpeg con H.264, así que no generé el .mp4.\n" +
-      "Las imágenes de arriba ya se pueden subir al panel y armar la lista de\n" +
-      "reproducción con la duración de cada una.\n" +
+      "Las imágenes ya se pueden subir al panel y armar la lista de reproducción\n" +
+      "con la duración de cada una.\n" +
       "Para obtener el video, instalá ffmpeg (winget install Gyan.FFmpeg) y volvé\n" +
       "a correr el comando, o pasá la ruta con la variable FFMPEG.",
   );
-  process.exit(0);
+} else {
+  console.log(`\nUsando ffmpeg: ${ffmpeg}`);
 }
 
-console.log(`\nUsando ffmpeg: ${ffmpeg}`);
-
-const salidas = [{ grados: 0, nombre: `cartel-vertical-${ANCHO}x${ALTO}.mp4` }].concat(
-  args.rotar.map((g) => ({ grados: g, nombre: `cartel-rotado-${g}.mp4` })),
-);
-
-let fallo = false;
-for (const s of salidas) {
-  const destino = path.join(dirSalida, s.nombre);
-  process.stdout.write(`  · ${s.nombre} … `);
-  if (armarVideo({ ffmpeg, placas, destino, fps: args.fps, grados: s.grados })) {
-    const mb = (fs.statSync(destino).size / 1024 / 1024).toFixed(1);
-    console.log(`ok (${mb} MB)`);
-  } else {
-    fallo = true;
-  }
-}
-
-console.log(`\nTodo en ${dirSalida}`);
+console.log(`\nTodo en ${dirBase}`);
 process.exit(fallo ? 1 : 0);

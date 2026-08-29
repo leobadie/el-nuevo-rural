@@ -9,12 +9,15 @@ export const dynamic = "force-dynamic";
 export default async function CartelPage({
   searchParams,
 }: {
-  searchParams: Promise<{ fijo?: string }>;
+  searchParams: Promise<{ fijo?: string; seccion?: string }>;
 }) {
   // ?fijo=N congela la pantalla en una placa concreta, sin rotar. Lo usa el
   // generador de video para capturar cada placa de forma reproducible, en vez
   // de sacar screenshots a ciegas esperando que la rotación caiga justo.
-  const { fijo } = await searchParams;
+  // ?seccion=carniceria deja en pantalla solo lo de ese sector (más lo que no
+  // tiene sección, que sirve para todo el local). Es lo que permite generar un
+  // archivo distinto para el TV de la carnicería y para el de la entrada.
+  const { fijo, seccion } = await searchParams;
   const indiceFijo = fijo != null && fijo !== "" && Number.isFinite(Number(fijo)) ? Number(fijo) : null;
 
   let placas: Placa[] = [];
@@ -37,5 +40,11 @@ export default async function CartelPage({
     console.error("cartel: falló la conexión con Supabase:", e);
   }
 
-  return <CartelPantalla placasIniciales={placas} indiceFijo={indiceFijo} />;
+  return (
+    <CartelPantalla
+      placasIniciales={placas}
+      indiceFijo={indiceFijo}
+      seccion={seccion?.trim() || null}
+    />
+  );
 }

@@ -1,0 +1,281 @@
+/*
+ * Tres propuestas de rediseño de la placa de oferta, para elegir antes de tocar
+ * el cartel que ya está andando. Comparten la unidad --u del cartel real
+ * (definida en cartel.css), así que lo que se ve acá es lo que se vería en el TV.
+ *
+ * Las tres buscan lo mismo: usar los 1920px de alto —hoy el contenido vive en el
+ * tercio central—, darle lugar de verdad a la foto del producto, y que se note
+ * de qué sección es la oferta.
+ */
+
+/* Franja de sección: el color lo pone --color-seccion desde el componente. */
+.v-franja {
+  flex: 0 0 auto;
+  background: var(--color-seccion, #1f3864);
+  padding: calc(var(--u) * 26) calc(var(--u) * 56);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 20);
+}
+
+.v-seccion {
+  font-size: calc(var(--u) * 44);
+  font-weight: 900;
+  letter-spacing: calc(var(--u) * 4);
+  text-transform: uppercase;
+}
+
+.v-marca-chica {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 16);
+  font-size: calc(var(--u) * 26);
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+  opacity: 0.95;
+}
+
+.v-logo-chico {
+  width: calc(var(--u) * 64);
+  height: calc(var(--u) * 64);
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+}
+
+/* Marcador de dónde va la foto real del producto. */
+.v-foto {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #dfe6ef 0%, #b9c6d6 55%, #97a8bd 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.v-foto::after {
+  content: "FOTO DEL PRODUCTO";
+  font-size: calc(var(--u) * 30);
+  font-weight: 800;
+  letter-spacing: calc(var(--u) * 3);
+  color: rgba(31, 56, 100, 0.55);
+}
+
+.v-foto img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ====================================================================
+   A — Foto a sangre arriba, datos abajo.
+   La foto entra sin márgenes y ocupa casi la mitad de la pantalla.
+   ==================================================================== */
+
+.vA {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.vA .v-foto {
+  flex: 0 0 calc(var(--u) * 820);
+}
+
+.vA-datos {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: calc(var(--u) * 40) calc(var(--u) * 56);
+}
+
+.vA-titulo {
+  font-size: calc(var(--u) * 104);
+  font-weight: 800;
+  line-height: 1.04;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.vA-precio {
+  font-size: calc(var(--u) * 250);
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: calc(var(--u) * -8);
+  font-variant-numeric: tabular-nums;
+  margin-top: calc(var(--u) * 20);
+}
+
+.vA-pie {
+  flex: 0 0 auto;
+  background: rgba(0, 0, 0, 0.25);
+  padding: calc(var(--u) * 28) calc(var(--u) * 56);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: calc(var(--u) * 34);
+  font-weight: 700;
+}
+
+/* ====================================================================
+   B — Tarjeta central: foto grande en bloque redondeado y precio abajo.
+   El más parecido a lo que ya hay, pero estirado para llenar el alto.
+   ==================================================================== */
+
+.vB {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  align-items: center;
+  text-align: center;
+  padding: calc(var(--u) * 48) calc(var(--u) * 56) calc(var(--u) * 56);
+  gap: calc(var(--u) * 30);
+}
+
+.vB .v-foto {
+  width: 100%;
+  flex: 0 0 calc(var(--u) * 700);
+  border-radius: calc(var(--u) * 32);
+}
+
+.vB-titulo {
+  font-size: calc(var(--u) * 92);
+  font-weight: 800;
+  line-height: 1.05;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.vB-bloque {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.vB-antes {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 22);
+  margin-bottom: calc(var(--u) * 8);
+}
+
+.vB-tachado {
+  font-size: calc(var(--u) * 50);
+  font-weight: 600;
+  opacity: 0.7;
+  text-decoration: line-through;
+  text-decoration-thickness: calc(var(--u) * 5);
+}
+
+.vB-off {
+  padding: calc(var(--u) * 10) calc(var(--u) * 26);
+  border-radius: calc(var(--u) * 16);
+  background: #ffd400;
+  color: #1a1a2e;
+  font-size: calc(var(--u) * 44);
+  font-weight: 900;
+}
+
+.vB-precio {
+  font-size: calc(var(--u) * 260);
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: calc(var(--u) * -8);
+  font-variant-numeric: tabular-nums;
+}
+
+.vB-unidad {
+  font-size: calc(var(--u) * 48);
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+/* ====================================================================
+   C — Foto a pantalla completa con el precio encima.
+   El de más impacto de lejos, pero depende de tener una foto buena.
+   ==================================================================== */
+
+.vC {
+  position: relative;
+  height: 100%;
+}
+
+.vC .v-foto {
+  position: absolute;
+  inset: 0;
+}
+
+/* Sin este velo el texto blanco desaparece sobre las zonas claras de la foto. */
+.vC-velo {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0.15) 32%,
+    rgba(0, 0, 0, 0.78) 68%,
+    rgba(0, 0, 0, 0.92) 100%
+  );
+}
+
+.vC-contenido {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: calc(var(--u) * 56);
+  text-align: center;
+}
+
+.vC-cinta {
+  align-self: center;
+  background: var(--color-seccion, #1f3864);
+  padding: calc(var(--u) * 16) calc(var(--u) * 40);
+  border-radius: 999px;
+  font-size: calc(var(--u) * 40);
+  font-weight: 900;
+  letter-spacing: calc(var(--u) * 3);
+  text-transform: uppercase;
+}
+
+.vC-abajo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--u) * 6);
+}
+
+.vC-titulo {
+  font-size: calc(var(--u) * 110);
+  font-weight: 900;
+  line-height: 1.02;
+  margin: 0 0 calc(var(--u) * 10);
+  text-shadow: 0 calc(var(--u) * 4) calc(var(--u) * 24) rgba(0, 0, 0, 0.6);
+  text-wrap: balance;
+}
+
+.vC-precio {
+  font-size: calc(var(--u) * 275);
+  font-weight: 900;
+  line-height: 0.92;
+  letter-spacing: calc(var(--u) * -9);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 calc(var(--u) * 8) calc(var(--u) * 30) rgba(0, 0, 0, 0.5);
+}
+
+.vC-unidad {
+  font-size: calc(var(--u) * 46);
+  font-weight: 700;
+  opacity: 0.95;
+}
