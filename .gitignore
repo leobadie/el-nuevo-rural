@@ -50,3 +50,6 @@ LOGO RURAL(2).jpg
 
 # configuración local de Claude Code (permisos de esta máquina, no compartir)
 .claude/settings.local.json
+
+# videos e imágenes generados del cartel (se regeneran con npm run cartel:video)
+/cartel-salida/

@@ -1,0 +1,295 @@
+/*
+ * Cartelería del televisor.
+ *
+ * Todo el diseño está pensado sobre un lienzo fijo de 1080x1920 (9:16 vertical)
+ * y se escala con --u, que vale "un píxel del diseño". Así el mismo cartel entra
+ * completo en un TV de 32" o de 55" sin recortes, sin desbordes y sin scroll.
+ */
+
+.cartel-fondo {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #000;
+  cursor: none;
+}
+
+.cartel-marco {
+  --u: min(calc(100vw / 1080), calc(100vh / 1920));
+  position: relative;
+  width: calc(var(--u) * 1080);
+  height: calc(var(--u) * 1920);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #fff;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background: #12203c;
+}
+
+/* ---------- Encabezado fijo: marca y hora ---------- */
+
+.cartel-header {
+  flex: 0 0 auto;
+  height: calc(var(--u) * 150);
+  padding: 0 calc(var(--u) * 56);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0, 0, 0, 0.28);
+  z-index: 2;
+}
+
+.cartel-marca {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 22);
+}
+
+.cartel-logo {
+  width: calc(var(--u) * 86);
+  height: calc(var(--u) * 86);
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+}
+
+.cartel-marca-texto {
+  font-size: calc(var(--u) * 36);
+  font-weight: 800;
+  letter-spacing: calc(var(--u) * 3);
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+.cartel-hora {
+  font-size: calc(var(--u) * 46);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
+}
+
+/* ---------- Cuerpo: la placa que rota ---------- */
+
+.cartel-cuerpo {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cartel-placa {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: calc(var(--u) * 60);
+  animation: cartel-entrar 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes cartel-entrar {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--u) * 46));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Un TV está prendido muchas horas: si alguien puso "reducir movimiento" en el
+   dispositivo, respetamos y cortamos la animación. */
+@media (prefers-reduced-motion: reduce) {
+  .cartel-placa {
+    animation: none;
+  }
+  .cartel-progreso-barra {
+    animation: none;
+    width: 100%;
+  }
+}
+
+/* ---------- Oferta ---------- */
+
+.cartel-chip {
+  display: inline-block;
+  padding: calc(var(--u) * 12) calc(var(--u) * 34);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: calc(var(--u) * 34);
+  font-weight: 700;
+  letter-spacing: calc(var(--u) * 2);
+  text-transform: uppercase;
+  margin-bottom: calc(var(--u) * 28);
+}
+
+.cartel-foto {
+  width: calc(var(--u) * 620);
+  height: calc(var(--u) * 480);
+  object-fit: cover;
+  border-radius: calc(var(--u) * 28);
+  margin-bottom: calc(var(--u) * 36);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cartel-titulo {
+  font-size: calc(var(--u) * 96);
+  font-weight: 800;
+  line-height: 1.06;
+  margin: 0 0 calc(var(--u) * 18);
+  text-wrap: balance;
+}
+
+.cartel-titulo-largo {
+  font-size: calc(var(--u) * 68);
+}
+
+.cartel-bajada {
+  font-size: calc(var(--u) * 42);
+  font-weight: 500;
+  opacity: 0.85;
+  margin: 0;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.cartel-precio-bloque {
+  margin-top: calc(var(--u) * 44);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.cartel-anterior {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 24);
+  margin-bottom: calc(var(--u) * 10);
+}
+
+.cartel-tachado {
+  font-size: calc(var(--u) * 52);
+  font-weight: 600;
+  opacity: 0.7;
+  text-decoration: line-through;
+  text-decoration-thickness: calc(var(--u) * 5);
+}
+
+.cartel-off {
+  padding: calc(var(--u) * 10) calc(var(--u) * 26);
+  border-radius: calc(var(--u) * 16);
+  background: #ffd400;
+  color: #1a1a2e;
+  font-size: calc(var(--u) * 44);
+  font-weight: 900;
+  letter-spacing: calc(var(--u) * 1);
+}
+
+.cartel-precio {
+  font-size: calc(var(--u) * 230);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: calc(var(--u) * -6);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 calc(var(--u) * 8) calc(var(--u) * 30) rgba(0, 0, 0, 0.35);
+}
+
+.cartel-precio-largo {
+  font-size: calc(var(--u) * 170);
+}
+
+.cartel-unidad {
+  margin-top: calc(var(--u) * 12);
+  font-size: calc(var(--u) * 46);
+  font-weight: 600;
+  opacity: 0.88;
+}
+
+/* ---------- Institucional y aviso ---------- */
+
+.cartel-logo-grande {
+  width: calc(var(--u) * 340);
+  height: calc(var(--u) * 340);
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+  margin-bottom: calc(var(--u) * 52);
+  box-shadow: 0 calc(var(--u) * 12) calc(var(--u) * 44) rgba(0, 0, 0, 0.35);
+}
+
+.cartel-titulo-grande {
+  font-size: calc(var(--u) * 116);
+  font-weight: 900;
+  line-height: 1.05;
+  margin: 0 0 calc(var(--u) * 30);
+  text-wrap: balance;
+}
+
+.cartel-titulo-grande-largo {
+  font-size: calc(var(--u) * 84);
+}
+
+.cartel-regla {
+  width: calc(var(--u) * 200);
+  height: calc(var(--u) * 8);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  margin: calc(var(--u) * 34) 0;
+}
+
+/* ---------- Pie: progreso y posición ---------- */
+
+.cartel-pie {
+  flex: 0 0 auto;
+  padding: calc(var(--u) * 34) calc(var(--u) * 56) calc(var(--u) * 40);
+  background: rgba(0, 0, 0, 0.28);
+  z-index: 2;
+}
+
+.cartel-progreso {
+  height: calc(var(--u) * 10);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+}
+
+.cartel-progreso-barra {
+  height: 100%;
+  border-radius: 999px;
+  background: #fff;
+  animation: cartel-avanzar linear both;
+}
+
+@keyframes cartel-avanzar {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.cartel-puntos {
+  margin-top: calc(var(--u) * 26);
+  display: flex;
+  justify-content: center;
+  gap: calc(var(--u) * 14);
+}
+
+.cartel-punto {
+  width: calc(var(--u) * 14);
+  height: calc(var(--u) * 14);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.cartel-punto-activo {
+  background: #fff;
+  transform: scale(1.35);
+}

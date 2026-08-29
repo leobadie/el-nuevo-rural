@@ -17,7 +17,9 @@
     "importar:registros": "node scripts/importar-registros.mjs",
     "verificar:proveedores": "node verificacion/proveedores.mjs",
     "verificar:base-proveedores": "node verificacion/base-proveedores.mts",
-    "verificar:bcra": "node verificacion/bcra.mjs"
+    "verificar:bcra": "node verificacion/bcra.mjs",
+    "cartel:video": "node scripts/generar-video-cartel.mjs",
+    "verificar:base-cartel": "node verificacion/base-cartel.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
