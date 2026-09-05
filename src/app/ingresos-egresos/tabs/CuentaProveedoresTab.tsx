@@ -8,6 +8,7 @@ import {
   esPagoAProveedor,
   pagosConSaldo,
   repartirFIFO,
+  repartirTodoFIFO,
 } from "@/lib/ingresos-egresos/cuentaProveedores";
 import { fmtDateIE, fmtMoneyIE } from "@/lib/ingresos-egresos/calculos";
 import { RED, inputStyle, tdStyle, thStyle } from "@/lib/ingresos-egresos/estilos";
@@ -18,6 +19,7 @@ import type {
   MedioPago,
   Movimiento,
   NuevaEntregaProveedor,
+  PagoConSaldo,
   Proveedor,
 } from "@/lib/ingresos-egresos/types";
 
@@ -437,6 +439,7 @@ function FichaProveedor({
   const aCuenta = pagos.reduce((a, p) => a + p.disponible, 0);
 
   const pagoAplicando = pagos.find((p) => p.id === aplicando);
+  const conDisponible = useMemo(() => pagos.filter((p) => p.disponible > 0), [pagos]);
 
   async function aplicarAuto(pagoId: string, disponible: number) {
     const reparto = repartirFIFO(disponible, pendientes);
@@ -445,6 +448,12 @@ function FichaProveedor({
       return;
     }
     await onImputar(reparto.map((r) => ({ movimiento_id: pagoId, entrega_id: r.entrega_id, monto: r.monto })));
+  }
+
+  async function aplicarTodoACuenta() {
+    const reparto = repartirTodoFIFO(conDisponible, pendientes);
+    if (reparto.length === 0) return;
+    await onImputar(reparto);
   }
 
   return (
@@ -479,6 +488,22 @@ function FichaProveedor({
       </div>
 
       <NuevaEntregaForm proveedores={[]} proveedorFijo={proveedor} onAddEntrega={onAddEntrega} />
+
+      {aCuenta > 0 && pendientes.length > 0 && (
+        <div
+          style={{ background: AMBAR_BG, color: AMBAR_TX, border: `1px solid ${AMBAR_TX}33`, borderRadius: 8, padding: "10px 12px", marginTop: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}
+          data-test="aviso-acuenta"
+        >
+          <span style={{ fontSize: 12 }}>
+            Este proveedor tiene <strong>{fmtMoneyIE(aCuenta)}</strong> ya pagados en Movimientos y
+            todavía sin aplicar, y {pendientes.length === 1 ? "una entrega pendiente" : `${pendientes.length} entregas pendientes`}.
+            No hace falta volver a cargar el pago.
+          </span>
+          <button onClick={aplicarTodoACuenta} style={{ ...botonStyle, background: AMBAR_TX, color: "white" }} data-test="btn-aplicar-todo">
+            Aplicar a las entregas pendientes
+          </button>
+        </div>
+      )}
 
       <h3 style={{ fontSize: 14, fontWeight: 800, margin: "18px 0 8px" }}>Entregas</h3>
       <div style={{ overflowX: "auto", border: "1px solid #ddd", borderRadius: 8 }}>
@@ -641,11 +666,17 @@ function FichaProveedor({
 
       {pagando && (
         <PagarEntregaModal
+          key={pagando.id}
           entrega={pagando}
           proveedor={proveedor}
+          pagosDisponibles={conDisponible}
           onCerrar={() => setPagando(null)}
           onConfirmar={async (datos) => {
             await onPagarEntrega({ ...datos, proveedor, entregaId: pagando.id });
+            setPagando(null);
+          }}
+          onAplicarExistente={async (movimientoId, monto) => {
+            await onImputar([{ movimiento_id: movimientoId, entrega_id: pagando.id, monto }]);
             setPagando(null);
           }}
         />
@@ -729,25 +760,70 @@ function AplicarPagoForm({
   );
 }
 
+/**
+ * Modal de "Pagar" una entrega. Tiene dos caminos que se ven casi igual pero hacen cosas muy
+ * distintas, y por eso el texto de abajo dice cuál es cuál:
+ *
+ * - **Aplicar un pago ya cargado**: sólo imputa. No toca el total de Movimientos (R9.1).
+ * - **Cargar un pago nuevo**: crea el egreso real, como siempre (R9.2).
+ *
+ * Arranca en el primero cuando el proveedor tiene plata a cuenta, porque ese es el orden real
+ * de las cosas en el local: primero se paga, después llega el remito. Antes el botón creaba
+ * siempre un egreso nuevo y el pago terminaba cargado dos veces.
+ */
 function PagarEntregaModal({
   entrega,
   proveedor,
+  pagosDisponibles,
   onCerrar,
   onConfirmar,
+  onAplicarExistente,
 }: {
   entrega: EntregaConSaldo;
   proveedor: string;
+  pagosDisponibles: PagoConSaldo[];
   onCerrar: () => void;
   onConfirmar: (datos: { fecha: string; monto: number; medioPago: MedioPago; descripcion: string }) => Promise<void>;
+  onAplicarExistente: (movimientoId: string, monto: number) => Promise<void>;
 }) {
+  const hayDisponibles = pagosDisponibles.length > 0;
+  const [modo, setModo] = useState<"existente" | "nuevo">(hayDisponibles ? "existente" : "nuevo");
+  const [pagoId, setPagoId] = useState(pagosDisponibles[0]?.id ?? "");
+  const pagoElegido = pagosDisponibles.find((p) => p.id === pagoId);
+  const topeExistente = Math.min(entrega.saldo, pagoElegido?.disponible ?? 0);
+
   const [fecha, setFecha] = useState(hoyISO);
   const [monto, setMonto] = useState(String(entrega.saldo));
+  const [montoAplicar, setMontoAplicar] = useState(String(topeExistente));
   const [medioPago, setMedioPago] = useState<MedioPago>("Efectivo");
   const [descripcion, setDescripcion] = useState(`Pago a ${proveedor}${entrega.comprobante ? ` — ${entrega.comprobante}` : ""}`);
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
 
   async function confirmar() {
+    setError("");
+    if (modo === "existente") {
+      const num = parseFloat(montoAplicar);
+      if (!pagoElegido) {
+        setError("Elegí cuál de los pagos querés aplicar.");
+        return;
+      }
+      if (!(num > 0)) {
+        setError("El monto tiene que ser mayor a cero.");
+        return;
+      }
+      if (num > topeExistente + 0.005) {
+        setError(
+          `No podés aplicar más de ${fmtMoneyIE(topeExistente)}: es lo menor entre el saldo de la entrega y lo que le queda a ese pago.`,
+        );
+        return;
+      }
+      setGuardando(true);
+      await onAplicarExistente(pagoElegido.id, num);
+      setGuardando(false);
+      return;
+    }
+
     const num = parseFloat(monto);
     if (!(num > 0)) {
       setError("El monto tiene que ser mayor a cero.");
@@ -766,6 +842,14 @@ function PagarEntregaModal({
     setGuardando(false);
   }
 
+  const tabStyle = (activo: boolean) => ({
+    ...botonStyle,
+    flex: 1,
+    background: activo ? RED : "#F0F0F0",
+    color: activo ? "white" : "#1A1A2E",
+    padding: "9px 10px",
+  });
+
   return (
     <div
       onClick={onCerrar}
@@ -777,7 +861,7 @@ function PagarEntregaModal({
         data-test="modal-pago"
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <strong style={{ fontSize: 16 }}>Registrar pago</strong>
+          <strong style={{ fontSize: 16 }}>Pagar entrega</strong>
           <button onClick={onCerrar} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#888" }}>
             <X size={18} />
           </button>
@@ -786,28 +870,89 @@ function PagarEntregaModal({
           {proveedor} · entrega del {fmtDateIE(entrega.fecha)} · debe <strong>{fmtMoneyIE(entrega.saldo)}</strong>
         </p>
 
-        <div style={{ display: "grid", gap: 10 }}>
-          <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
-            Fecha del pago
-            <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} data-test="pago-fecha" />
-          </label>
-          <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
-            Monto
-            <input type="number" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} style={inputStyle} data-test="pago-monto" />
-          </label>
-          <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
-            Medio de pago
-            <select value={medioPago} onChange={(e) => setMedioPago(e.target.value as MedioPago)} style={inputStyle} data-test="pago-medio">
-              <option value="Efectivo">Efectivo</option>
-              <option value="Transferencia">Transferencia</option>
-              <option value="Cheque">Cheque</option>
-            </select>
-          </label>
-          <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
-            Descripción
-            <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} style={inputStyle} />
-          </label>
-        </div>
+        {hayDisponibles && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <button
+              onClick={() => {
+                setModo("existente");
+                setError("");
+              }}
+              style={tabStyle(modo === "existente")}
+              data-test="modo-existente"
+            >
+              Usar un pago ya cargado
+            </button>
+            <button
+              onClick={() => {
+                setModo("nuevo");
+                setError("");
+              }}
+              style={tabStyle(modo === "nuevo")}
+              data-test="modo-nuevo"
+            >
+              Cargar un pago nuevo
+            </button>
+          </div>
+        )}
+
+        {modo === "existente" ? (
+          <div style={{ display: "grid", gap: 10 }} data-test="form-existente">
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+              Pago a aplicar
+              <select
+                value={pagoId}
+                onChange={(e) => {
+                  setPagoId(e.target.value);
+                  const nuevo = pagosDisponibles.find((p) => p.id === e.target.value);
+                  setMontoAplicar(String(Math.min(entrega.saldo, nuevo?.disponible ?? 0)));
+                  setError("");
+                }}
+                style={inputStyle}
+                data-test="pago-existente"
+              >
+                {pagosDisponibles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {fmtDateIE(p.fecha)} — {p.descripcion || "sin descripción"} — quedan {fmtMoneyIE(p.disponible)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+              Monto a aplicar
+              <input
+                type="number"
+                inputMode="decimal"
+                value={montoAplicar}
+                onChange={(e) => setMontoAplicar(e.target.value)}
+                style={inputStyle}
+                data-test="pago-monto-aplicar"
+              />
+            </label>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }} data-test="form-nuevo">
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+              Fecha del pago
+              <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} data-test="pago-fecha" />
+            </label>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+              Monto
+              <input type="number" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} style={inputStyle} data-test="pago-monto" />
+            </label>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+              Medio de pago
+              <select value={medioPago} onChange={(e) => setMedioPago(e.target.value as MedioPago)} style={inputStyle} data-test="pago-medio">
+                <option value="Efectivo">Efectivo</option>
+                <option value="Transferencia">Transferencia</option>
+                <option value="Cheque">Cheque</option>
+              </select>
+            </label>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+              Descripción
+              <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} style={inputStyle} />
+            </label>
+          </div>
+        )}
 
         {error && (
           <div style={{ color: ROJO_TX, fontSize: 12, marginTop: 10, fontWeight: 700 }} data-test="pago-error">
@@ -815,10 +960,20 @@ function PagarEntregaModal({
           </div>
         )}
 
-        <p style={{ fontSize: 11, color: "#888", margin: "12px 0 0" }}>
-          Se va a crear un egreso en Movimientos con categoría &quot;Pago a Proveedor&quot;, así que no hace
-          falta que lo cargues de nuevo ahí.
-        </p>
+        {modo === "existente" ? (
+          <p
+            style={{ fontSize: 11, color: AMBAR_TX, background: AMBAR_BG, borderRadius: 6, padding: "8px 10px", margin: "12px 0 0" }}
+            data-test="aviso-modo"
+          >
+            Se aplica un pago que <strong>ya está cargado</strong> en Movimientos. No se crea ningún
+            egreso nuevo: el total de Movimientos no cambia.
+          </p>
+        ) : (
+          <p style={{ fontSize: 11, color: "#888", margin: "12px 0 0" }} data-test="aviso-modo">
+            Se va a crear <strong>un egreso nuevo</strong> en Movimientos con categoría &quot;Pago a
+            Proveedor&quot;. Usá esta opción sólo si el pago todavía no está cargado ahí.
+          </p>
+        )}
 
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <button
@@ -827,7 +982,7 @@ function PagarEntregaModal({
             style={{ ...botonStyle, background: RED, color: "white", opacity: guardando ? 0.6 : 1 }}
             data-test="pago-confirmar"
           >
-            {guardando ? "Guardando…" : "Registrar pago"}
+            {guardando ? "Guardando…" : modo === "existente" ? "Aplicar pago" : "Registrar pago"}
           </button>
           <button onClick={onCerrar} style={{ ...botonStyle, background: "#F0F0F0", color: "#1A1A2E" }}>
             Cancelar

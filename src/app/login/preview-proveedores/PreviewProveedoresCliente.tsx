@@ -131,8 +131,17 @@ export default function PreviewProveedoresCliente() {
     // el ancho de la tabla estira el documento entero en móvil.
     <div style={{ fontFamily: "Arial, sans-serif", maxWidth: 1200, width: "100%", minWidth: 0, margin: "0 auto", padding: 20, color: "#1A1A2E", background: "white" }}>
       <h1 style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>Preview — Cuenta corriente de proveedores</h1>
-      <p style={{ fontSize: 12, color: "#888", marginTop: 0, marginBottom: 20 }}>
+      <p style={{ fontSize: 12, color: "#888", marginTop: 0, marginBottom: 12 }}>
         Datos ficticios en memoria. Sólo existe en desarrollo.
+      </p>
+      {/*
+        Espejo de lo que sería la pestaña Movimientos. Está acá porque el bug que arregla R9
+        no se ve en la pantalla del proveedor —ahí la entrega queda saldada de las dos formas—:
+        se ve en que el egreso se duplica, y eso vive en otra pestaña.
+      */}
+      <p style={{ fontSize: 12, color: "#666", marginBottom: 20, background: "#F8F9FA", borderRadius: 6, padding: "8px 10px" }}>
+        Movimientos: <strong data-test="preview-cant-movs">{movs.length}</strong> ·
+        {" "}total de egresos <strong data-test="preview-total-egresos">{movs.reduce((a, m) => a + (Number(m.egreso) || 0), 0)}</strong>
       </p>
       <CuentaProveedoresTab
         movs={movs}

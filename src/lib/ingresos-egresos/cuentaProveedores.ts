@@ -153,3 +153,34 @@ export function repartirFIFO(
   }
   return salida;
 }
+
+/**
+ * Reparte TODO el saldo a cuenta del proveedor contra sus entregas pendientes: pagos del más
+ * viejo al más nuevo contra entregas de la más vieja a la más nueva (R9.5).
+ *
+ * Lleva su propio registro de lo que va consumiendo de cada entrega porque las `EntregaConSaldo`
+ * que recibe se calcularon antes de este reparto: si mirara sólo el `saldo` de cada una, el
+ * segundo pago volvería a apuntar a una entrega que el primero ya cubrió y la base rechazaría
+ * la imputación por pasarse del monto.
+ */
+export function repartirTodoFIFO(
+  pagos: PagoConSaldo[],
+  entregas: EntregaConSaldo[],
+): { movimiento_id: string; entrega_id: string; monto: number }[] {
+  const saldos = new Map(entregas.map((e) => [e.id, centavos(e.saldo)]));
+  const salida: { movimiento_id: string; entrega_id: string; monto: number }[] = [];
+  for (const p of pagos) {
+    let restanteC = centavos(p.disponible);
+    if (restanteC <= 0) continue;
+    for (const e of entregas) {
+      if (restanteC <= 0) break;
+      const saldoC = saldos.get(e.id) ?? 0;
+      if (saldoC <= 0) continue;
+      const aplicarC = Math.min(restanteC, saldoC);
+      salida.push({ movimiento_id: p.id, entrega_id: e.id, monto: pesos(aplicarC) });
+      saldos.set(e.id, saldoC - aplicarC);
+      restanteC -= aplicarC;
+    }
+  }
+  return salida;
+}

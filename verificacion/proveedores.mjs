@@ -33,6 +33,9 @@ const NAVEGADORES = [
 const results = [];
 function check(id, desc, ok, detail) {
   results.push({ id, desc, ok: !!ok, detail: detail === undefined ? "" : String(detail) });
+  // Se imprime al toque además de acumularse: si un check posterior se cuelga, el informe
+  // final nunca sale y sin esto no hay forma de saber hasta dónde llegó.
+  if (process.env.VERBOSE) console.log((ok ? "  OK   " : "  FALLA ") + id);
 }
 
 const plata = (n) => "$" + Math.round(n).toLocaleString("es-AR");
@@ -57,7 +60,11 @@ async function main() {
     if (m.type() === "error") errores.push(m.text());
   });
 
-  await page.goto(URL, { waitUntil: "networkidle" });
+  // `networkidle` no sirve con el dev server de Turbopack: el socket de HMR nunca deja la
+  // red quieta y la espera se va en timeout. Se espera a que aparezca la tabla, que es lo
+  // que realmente hace falta.
+  await page.goto(URL, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('[data-test="fila-cuenta"]');
 
   // ---------- R3: lista de proveedores ----------
   const filas = page.locator('[data-test="fila-cuenta"]');
@@ -114,12 +121,66 @@ async function main() {
 
   await page.screenshot({ path: path.join(OUT, "proveedores-ficha-desktop.png"), fullPage: true });
 
+  // ---------- R9: pagar una entrega con plata que ya está a cuenta ----------
+  // El bug era que "Pagar" creaba SIEMPRE un egreso nuevo, así que el pago quedaba
+  // cargado dos veces y el total de Movimientos subía el doble.
+  const egresos = () => page.locator('[data-test="preview-total-egresos"]').innerText().then(Number);
+  const cantMovs = () => page.locator('[data-test="preview-cant-movs"]').innerText().then(Number);
+
+  const franja = page.locator('[data-test="aviso-acuenta"]');
+  check("R9.5", `La ficha avisa que hay ${plata(60000)} sin aplicar`,
+    (await franja.count()) === 1 && (await franja.innerText()).includes(plata(60000)),
+    (await franja.count()) ? (await franja.innerText()).replace(/\s+/g, " ") : "no apareció la franja");
+
+  const egresosAntes = await egresos();
+  const movsAntes = await cantMovs();
+
+  await page.locator('[data-test="btn-pagar"]').first().click();
+  await page.waitForSelector('[data-test="modal-pago"]');
+
+  check("R9.1", "Con plata a cuenta, el modal abre en \"usar un pago ya cargado\"",
+    (await page.locator('[data-test="form-existente"]').count()) === 1
+      && (await page.locator('[data-test="form-nuevo"]').count()) === 0);
+  check("R9.4", "El modal avisa que no se crea ningún egreso nuevo",
+    (await page.locator('[data-test="aviso-modo"]').innerText()).includes("ya está cargado"),
+    (await page.locator('[data-test="aviso-modo"]').innerText()).replace(/\s+/g, " "));
+
+  const montoAplicar = await page.locator('[data-test="pago-monto-aplicar"]').inputValue();
+  check("R9.3", `El monto viene en el menor entre saldo (${plata(100000)}) y disponible (${plata(60000)})`,
+    Number(montoAplicar) === 60000, montoAplicar);
+
+  await page.screenshot({ path: path.join(OUT, "proveedores-modal-acuenta-desktop.png"), fullPage: true });
+
+  // No se puede aplicar más de lo que le queda al pago.
+  await page.locator('[data-test="pago-monto-aplicar"]').fill("999999");
+  await page.locator('[data-test="pago-confirmar"]').click();
+  await page.waitForTimeout(200);
+  check("R9.3b", "Rechaza aplicar más de lo disponible",
+    (await page.locator('[data-test="pago-error"]').count()) === 1);
+
+  await page.locator('[data-test="pago-monto-aplicar"]').fill("20000");
+  await page.locator('[data-test="pago-confirmar"]').click();
+  await page.waitForTimeout(400);
+
+  const saldosR9 = await page.locator('[data-test="entrega-saldo"]').allInnerTexts();
+  check("R9.1b", `Aplicar ${plata(20000)} baja la deuda de la entrega a ${plata(80000)}`,
+    num(saldosR9[0]) === 80000, saldosR9.join(" / "));
+  check("R2.2c", `Quedan ${plata(40000)} a cuenta`,
+    num(await page.locator('[data-test="ficha-acuenta"]').innerText()) === 40000,
+    await page.locator('[data-test="ficha-acuenta"]').innerText());
+
+  const egresosDespues = await egresos();
+  const movsDespues = await cantMovs();
+  check("R7.5", "Aplicar un pago a cuenta NO crea un egreso ni cambia el total de Movimientos",
+    egresosDespues === egresosAntes && movsDespues === movsAntes,
+    `egresos ${egresosAntes} → ${egresosDespues}, movimientos ${movsAntes} → ${movsDespues}`);
+
   // ---------- R6.2: aplicar automático (FIFO) ----------
   await page.locator('[data-test="btn-aplicar-auto"]').first().click();
   await page.waitForTimeout(300);
 
   const saldosEntrega = await page.locator('[data-test="entrega-saldo"]').allInnerTexts();
-  check("R6.2", `FIFO: los ${plata(60000)} van a la entrega más vieja, que queda debiendo ${plata(40000)}`,
+  check("R6.2", `FIFO: los ${plata(40000)} que quedan van a la entrega más vieja, que queda debiendo ${plata(40000)}`,
     num(saldosEntrega[0]) === 40000 && num(saldosEntrega[1]) === 50000,
     saldosEntrega.join(" / "));
   check("R2.2b", "Ya no queda saldo a cuenta",
@@ -131,6 +192,10 @@ async function main() {
   // ---------- R5: pagar desde la ficha ----------
   await page.locator('[data-test="btn-pagar"]').first().click();
   await page.waitForSelector('[data-test="modal-pago"]');
+
+  check("R9.2", "Sin plata a cuenta, el modal abre directo en \"cargar un pago nuevo\", sin elegir",
+    (await page.locator('[data-test="form-nuevo"]').count()) === 1
+      && (await page.locator('[data-test="modo-existente"]').count()) === 0);
 
   const montoPre = await page.locator('[data-test="pago-monto"]').inputValue();
   check("R5.1", `El monto viene precargado en el saldo pendiente (${plata(40000)})`,
@@ -155,6 +220,9 @@ async function main() {
   check("R5.3b", `El saldo del proveedor baja a ${plata(50000)}`,
     num(await page.locator('[data-test="ficha-saldo"]').innerText()) === 50000,
     await page.locator('[data-test="ficha-saldo"]').innerText());
+
+  check("R9.6", `Cargar un pago nuevo sí suma ${plata(40000)} a los egresos de Movimientos`,
+    (await egresos()) === egresosDespues + 40000, `${egresosDespues} → ${await egresos()}`);
 
   const pagosFilas = await page.locator('[data-test="fila-pago"]').count();
   check("R5.4", "El pago se registró como movimiento y aparece en la lista de pagos", pagosFilas === 2, `${pagosFilas} pagos`);
@@ -210,7 +278,7 @@ async function main() {
   // ---------- R7.2: móvil ----------
   const mobile = await ctx.newPage();
   await mobile.setViewportSize({ width: 390, height: 844 });
-  await mobile.goto(URL, { waitUntil: "networkidle" });
+  await mobile.goto(URL, { waitUntil: "domcontentloaded" });
   await mobile.waitForSelector('[data-test="fila-cuenta"]');
 
   const desborde = await mobile.evaluate(
@@ -227,9 +295,31 @@ async function main() {
   check("R7.2b", "La ficha tampoco se desborda en móvil", desbordeFicha <= 1, `${desbordeFicha}px de desborde`);
   await mobile.screenshot({ path: path.join(OUT, "proveedores-ficha-movil.png"), fullPage: true });
 
+  // R9 en móvil. La pestaña de móvil es un contexto nuevo, así que el preview arranca de
+  // cero: Italiana vuelve a tener sus $60.000 a cuenta y sus dos entregas impagas, que es
+  // justo el escenario del bug.
+  await mobile.waitForSelector('[data-test="aviso-acuenta"]');
+  const desbordeAviso = await mobile.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  check("R9.5b", "La franja de aviso no desborda la ficha en móvil", desbordeAviso <= 1, `${desbordeAviso}px de desborde`);
+  await mobile.screenshot({ path: path.join(OUT, "proveedores-aviso-acuenta-movil.png"), fullPage: true });
+
+  await mobile.locator('[data-test="btn-pagar"]').first().click();
+  await mobile.waitForSelector('[data-test="modal-pago"]');
+  const desbordeModal = await mobile.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  check("R9.1c", "El modal con las dos opciones entra en pantalla de móvil", desbordeModal <= 1, `${desbordeModal}px de desborde`);
+  await mobile.screenshot({ path: path.join(OUT, "proveedores-modal-acuenta-movil.png") });
+
   check("R7.1", "Sin errores de JavaScript en consola", errores.length === 0, errores.join(" | ").slice(0, 300));
 
-  await browser.close();
+  // El informe va ANTES de cerrar el navegador: en esta máquina el `browser.close()` de
+  // Edge headless tarda varios minutos, y con el orden al revés los resultados quedaban
+  // retenidos todo ese rato como si el script estuviera colgado. El `process.exit()` del
+  // final se lleva puesto el navegador igual, así que el cierre no se espera.
+  browser.close().catch(() => {});
 
   // ---------- informe ----------
   const fallidos = results.filter((r) => !r.ok);

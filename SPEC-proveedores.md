@@ -100,13 +100,41 @@ estrenar la pestaña todos los proveedores aparecían con saldo negativo y con t
   correr el corte para atrás los hace volver a contar.
 - **R8.4** Mover el corte queda reservado al admin: cambia lo que ve todo el mundo.
 
+### R9 — No duplicar el pago que ya estaba cargado (agregado el 05/09/2026)
+
+El botón "Pagar" creaba **siempre** un egreso nuevo, sin mirar si el proveedor ya tenía plata
+a cuenta. El flujo real del local es al revés del que asumía R5: primero se paga y se carga el
+egreso en Movimientos, y recién después llega el remito y se carga la entrega. Al tocar "Pagar"
+sobre esa entrega se creaba un segundo egreso por el mismo importe: la entrega quedaba saldada,
+el total de Movimientos subía el doble y el pago original seguía colgado sin aplicar.
+
+- **R9.1** Si el proveedor tiene pagos con saldo disponible, el modal de "Pagar" abre con la
+  opción **"Usar un pago ya cargado"** preseleccionada, listando esos pagos (fecha, descripción,
+  disponible). Confirmar **sólo imputa**: no crea ningún movimiento.
+- **R9.2** La otra opción, **"Cargar un pago nuevo"**, sigue disponible en el mismo modal y hace
+  exactamente lo que hacía antes (R5.3). Es la opción por defecto —y la única visible— cuando el
+  proveedor no tiene nada a cuenta.
+- **R9.3** El monto a aplicar se pre-carga en el mínimo entre el saldo de la entrega y el
+  disponible del pago elegido, y es editable. No puede superar ninguno de los dos.
+- **R9.4** El modal dice en texto qué va a pasar al confirmar —"se aplica un pago que ya está en
+  Movimientos, no se crea uno nuevo" o "se va a crear un egreso"— porque la diferencia entre las
+  dos opciones es justamente invisible en la pantalla del proveedor: se ve en el total de
+  Movimientos, que está en otra pestaña.
+- **R9.5** La ficha muestra una franja de aviso cuando hay saldo a cuenta y hay entregas
+  pendientes, con el monto sin aplicar y un botón para repartirlo FIFO contra esas entregas
+  (la misma lógica de R6.2). Desaparece cuando no queda nada que aplicar.
+- **R9.6** Nada de esto borra ni edita movimientos existentes: imputar es reversible (R4.7) y no
+  toca el total de Movimientos.
+
 ### R7 — Verificación
 
 - **R7.1** La app compila (`npm run build`) y pasa el lint sin errores nuevos.
 - **R7.2** Se prueba en un navegador real, no de memoria.
 - **R7.3** Screenshots en desktop y móvil antes de dar la tarea por terminada.
 - **R7.4** El saldo tiene que cerrar: `Entregado − Pagado = Σ saldos de entregas − Σ pagos a cuenta`.
-- **R7.5** Los topes de imputación se verifican también contra la base real, no solo contra la
+- **R7.5** Aplicar un pago a cuenta desde el botón "Pagar" **no** cambia el total de egresos de
+  Movimientos: se compara el total antes y después.
+- **R7.6** Los topes de imputación se verifican también contra la base real, no solo contra la
   pantalla (`npm run verificar:base-proveedores`): el chequeo del navegador corre sobre datos
   que pueden estar viejos si hay dos pestañas abiertas.
 
