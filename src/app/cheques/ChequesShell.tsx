@@ -24,6 +24,7 @@ import type {
   NuevoCheque,
   NuevoChequeTercero,
 } from "@/lib/cheques/types";
+import { hoyISO } from "@/lib/fechas";
 
 const TABS: { key: string; label: string }[] = [
   { key: "tabla", label: "Tabla y dashboard" },
@@ -132,7 +133,7 @@ export default function ChequesShell({
     const nuevo: NuevoCheque = {
       n_cheque: "",
       proveedor: c.proveedor,
-      fecha_emision: new Date().toISOString().slice(0, 10),
+      fecha_emision: hoyISO(),
       fecha_cobro: null,
       importe: c.importe,
       debito_banco: null,

@@ -12,6 +12,7 @@ import type {
   Proveedor,
   SortConfigIE,
 } from "@/lib/ingresos-egresos/types";
+import { hoyISO } from "@/lib/fechas";
 
 const OTRO = "Otro";
 
@@ -183,7 +184,7 @@ export default function MovimientosTab({
 
   async function duplicarMov(m: MovimientoEnriquecido) {
     await onAdd({
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: hoyISO(),
       descripcion: m.descripcion,
       categoria: m.categoria,
       ingreso: null,

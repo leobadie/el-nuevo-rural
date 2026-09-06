@@ -6,12 +6,13 @@ import type {
   ResumenMensualIE,
   ResumenProveedorIE,
 } from "./types";
+import { mesActualISO } from "@/lib/fechas";
 
 export const fmtMoneyIE = fmtMoney;
 export const fmtDateIE = fmtDate;
 
 export function mesActualClave(): string {
-  return new Date().toISOString().slice(0, 7);
+  return mesActualISO();
 }
 
 export function buildSaldoAcumulado(movs: Movimiento[]): MovimientoEnriquecido[] {

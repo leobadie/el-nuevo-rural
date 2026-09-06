@@ -1,8 +1,9 @@
 import { fmtDate } from "@/lib/cheques/calculos";
 import type { ItemPedido } from "./types";
+import { hoyISO } from "@/lib/fechas";
 
 export function textoPedido(proveedor: string, items: ItemPedido[], notas: string): string {
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
   let texto = `*Pedido — El Nuevo Rural* (${fmtDate(hoy)})\n`;
   texto += `Para: ${proveedor}\n\n`;
   items

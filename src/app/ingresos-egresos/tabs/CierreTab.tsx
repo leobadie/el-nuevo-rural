@@ -4,9 +4,10 @@ import { useMemo } from "react";
 import { fmtMoneyIE } from "@/lib/ingresos-egresos/calculos";
 import { thStyle, tdStyle } from "@/lib/ingresos-egresos/estilos";
 import type { Movimiento } from "@/lib/ingresos-egresos/types";
+import { hoyISO } from "@/lib/fechas";
 
 export default function CierreTab({ movs }: { movs: Movimiento[] }) {
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
 
   const cierre = useMemo(() => {
     const movsHoy = movs.filter((m) => m.fecha === hoy);

@@ -12,6 +12,7 @@ import {
 } from "@/lib/ingresos-egresos/cuentaProveedores";
 import { fmtDateIE, fmtMoneyIE } from "@/lib/ingresos-egresos/calculos";
 import { RED, inputStyle, tdStyle, thStyle } from "@/lib/ingresos-egresos/estilos";
+import { hoyISO } from "@/lib/fechas";
 import type {
   EntregaConSaldo,
   EntregaProveedor,
@@ -30,7 +31,6 @@ const ROJO_TX = "#922B21";
 const AMBAR_BG = "#FDEBD0";
 const AMBAR_TX = "#784212";
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
 
 const COLOR_ESTADO: Record<EntregaConSaldo["estado"], { bg: string; tx: string }> = {
   Pagada: { bg: VERDE_BG, tx: VERDE },

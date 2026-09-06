@@ -1,6 +1,7 @@
 import { computeEstado } from "@/lib/cheques/calculos";
 import type { Cheque } from "@/lib/cheques/types";
 import type { Movimiento } from "@/lib/ingresos-egresos/types";
+import { hoyISO } from "@/lib/fechas";
 
 export interface KpisCheques {
   total: number;
@@ -33,7 +34,7 @@ export interface KpisMovs {
 export function buildKpisMovs(movs: Movimiento[]): KpisMovs {
   const ingresos = movs.reduce((s, m) => s + (Number(m.ingreso) || 0), 0);
   const egresos = movs.filter((m) => m.medio_pago !== "Cheque").reduce((s, m) => s + (Number(m.egreso) || 0), 0);
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyISO();
   const movsHoy = movs.filter((m) => m.fecha === hoy);
   const ingresosHoy = movsHoy.reduce((s, m) => s + (Number(m.ingreso) || 0), 0);
   const egresosHoy = movsHoy

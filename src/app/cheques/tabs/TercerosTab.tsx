@@ -6,6 +6,7 @@ import { fmtDate, fmtMoney } from "@/lib/cheques/calculos";
 import { NAVY, inputStyle, thStyle, tdStyle } from "@/lib/cheques/estilos";
 import { formatearCuit, normalizarCuit, validarCuit } from "@/lib/bcra/cuit";
 import type { ChequeTercero, NuevoChequeTercero } from "@/lib/cheques/types";
+import { hoyISO } from "@/lib/fechas";
 
 const emptyFormTercero: NuevoChequeTercero = {
   n_cheque: "",
@@ -111,7 +112,7 @@ export default function TercerosTab({
   function abrirEntrega(t: ChequeTercero) {
     setEntregaId(t.id);
     setEntregaProveedor(t.entregado_a || "");
-    setEntregaFecha(t.fecha_entrega || new Date().toISOString().slice(0, 10));
+    setEntregaFecha(t.fecha_entrega || hoyISO());
   }
   async function confirmarEntrega() {
     if (!entregaProveedor.trim()) {

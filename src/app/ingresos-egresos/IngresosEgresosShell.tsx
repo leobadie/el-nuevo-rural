@@ -36,6 +36,7 @@ import type {
   VentaXRP,
 } from "@/lib/ingresos-egresos/types";
 import type { RendicionXRP } from "@/lib/ingresos-egresos/xrp";
+import { hoyISO } from "@/lib/fechas";
 
 function normalizarMovimientoImportado(raw: Record<string, unknown>): NuevoMovimiento {
   const get = (a: string, b: string) => (raw[a] ?? raw[b]) as unknown;
@@ -466,7 +467,7 @@ export default function IngresosEgresosShell({
 
   async function cargarGastoFijo(g: GastoFijo) {
     await addMov({
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: hoyISO(),
       descripcion: g.descripcion,
       categoria: g.categoria,
       ingreso: null,
