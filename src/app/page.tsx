@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileText, Wallet, Users, TrendingUp, Monitor } from "lucide-react";
+import { FileText, Wallet, Users, TrendingUp, Monitor, Landmark } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { fmtMoney } from "@/lib/cheques/calculos";
 import {
@@ -11,10 +11,13 @@ import {
   countProveedoresEnRiesgo,
 } from "@/lib/resumen-general/calculos";
 import { calcularMes } from "@/lib/rentabilidad/calculos";
+import { resumenMunicipalidad } from "@/lib/municipalidad/calculos";
+import { hoyISO } from "@/lib/fechas";
 import { logout } from "./login/actions";
 import type { Cheque, LimiteProveedor } from "@/lib/cheques/types";
 import type { LimiteCategoria, Movimiento, VentaXRP } from "@/lib/ingresos-egresos/types";
 import type { Colaborador, ParametrosEmpleados, RegistroAsistencia } from "@/lib/empleados/types";
+import type { CobroMunicipalidad, FacturaMunicipalidad, ImputacionCobro } from "@/lib/municipalidad/types";
 
 const PARAMETROS_DEFAULT: ParametrosEmpleados = {
   horas_completa: 10.75,
@@ -50,6 +53,9 @@ export default async function Home() {
     ventasXRPRes,
     registrosRes,
     parametrosRes,
+    facturasMuniRes,
+    cobrosMuniRes,
+    imputacionesMuniRes,
   ] = await Promise.all([
     esAdmin ? supabase.from("cheques").select("*") : Promise.resolve({ data: [] as Cheque[] }),
     supabase.from("movimientos").select("*"),
@@ -59,6 +65,9 @@ export default async function Home() {
     esAdmin ? supabase.from("ventas_xrp").select("*") : Promise.resolve({ data: [] as VentaXRP[] }),
     esAdmin ? supabase.from("registros_asistencia").select("*") : Promise.resolve({ data: [] as RegistroAsistencia[] }),
     esAdmin ? supabase.from("parametros_empleados").select("*").maybeSingle() : Promise.resolve({ data: null }),
+    supabase.from("facturas_municipalidad").select("*"),
+    supabase.from("cobros_municipalidad").select("*"),
+    supabase.from("imputaciones_cobro_municipalidad").select("*"),
   ]);
 
   const cheques = (chequesRes.data ?? []) as Cheque[];
@@ -79,6 +88,14 @@ export default async function Home() {
   const proveedoresEnRiesgo = countProveedoresEnRiesgo(cheques, limitesProveedores);
   const categoriasEnRiesgo = countCategoriasEnRiesgo(movs, limitesCategorias);
   const alertasTotal = kpisCheques.vencidoCant + proveedoresEnRiesgo + categoriasEnRiesgo;
+
+  // Si la migración 018 todavía no se aplicó, las consultas vuelven sin datos y la tarjeta queda en cero.
+  const muni = resumenMunicipalidad(
+    (facturasMuniRes.data ?? []) as FacturaMunicipalidad[],
+    (cobrosMuniRes.data ?? []) as CobroMunicipalidad[],
+    (imputacionesMuniRes.data ?? []) as ImputacionCobro[],
+    hoyISO(),
+  );
 
   const hoy = new Date();
   const datosMes = esAdmin
@@ -223,6 +240,34 @@ export default async function Home() {
               <div style={{ background: "#F8F9FA", borderRadius: 8, padding: "10px" }}>
                 <div style={{ fontSize: 10, color: "#666", fontWeight: 700 }}>COLABORADORES CARGADOS</div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: "#1A1A2E" }}>{colaboradores.length}</div>
+              </div>
+            </div>
+
+            <div style={{ background: "white", border: "1px solid #e0e0e0", borderTop: "4px solid #117A65", borderRadius: 10, padding: 18 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: "#117A65", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Landmark size={17} color="white" />
+                  </div>
+                  <span style={{ fontWeight: 700, color: "#117A65", fontSize: 15 }}>Municipalidad (PAICOR)</span>
+                </div>
+                <Link href="/municipalidad" style={{ background: "#117A65", color: "white", fontSize: 12, fontWeight: 700, padding: "6px 10px", borderRadius: 6, textDecoration: "none" }}>
+                  Ver módulo →
+                </Link>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ gridColumn: "span 2", background: muni.teDebe > 0 ? "#FADBD8" : "#D5F5E3", color: muni.teDebe > 0 ? "#922B21" : "#145A32", borderRadius: 8, padding: "10px" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700 }}>TE DEBE</div>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>{fmtMoney(muni.teDebe)}</div>
+                </div>
+                <div style={{ background: "#F8F9FA", borderRadius: 8, padding: "10px" }}>
+                  <div style={{ fontSize: 10, color: "#666", fontWeight: 700 }}>FACTURAS PENDIENTES</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#1A1A2E" }}>{muni.facturasPendientes}</div>
+                </div>
+                <div style={{ background: "#F8F9FA", borderRadius: 8, padding: "10px" }}>
+                  <div style={{ fontSize: 10, color: "#666", fontWeight: 700 }}>LA MÁS VIEJA</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#1A1A2E" }}>{muni.diasMasVieja != null ? `${muni.diasMasVieja} días` : "—"}</div>
+                </div>
               </div>
             </div>
 

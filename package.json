@@ -21,7 +21,10 @@
     "cartel:video": "node scripts/generar-video-cartel.mjs",
     "verificar:base-cartel": "node verificacion/base-cartel.mts",
     "verificar:pantallas": "node verificacion/pantallas.mjs",
-    "verificar:fechas": "node verificacion/fechas.mts"
+    "verificar:fechas": "node verificacion/fechas.mts",
+    "verificar:municipalidad-calculos": "node verificacion/municipalidad-calculos.mts",
+    "verificar:municipalidad": "node verificacion/municipalidad.mjs",
+    "verificar:base-municipalidad": "node verificacion/base-municipalidad.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
