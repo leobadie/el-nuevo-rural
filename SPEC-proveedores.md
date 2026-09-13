@@ -126,6 +126,17 @@ el total de Movimientos subía el doble y el pago original seguía colgado sin a
 - **R9.6** Nada de esto borra ni edita movimientos existentes: imputar es reversible (R4.7) y no
   toca el total de Movimientos.
 
+### R10 — Aplicar un pago al mismo remito en dos veces (agregado el 13/09/2026)
+
+La 012 tenía `unique (movimiento_id, entrega_id)` en `imputaciones_pago`. Aplicar una parte de un
+pago a un remito y después el resto con "Aplicar automático" (o la franja de R9.5) vuelve a apuntar
+al mismo remito, y la base lo rechazaba con 23505 aunque estuviera dentro de los topes. El banco
+de pruebas en memoria no tenía esa restricción, por eso R6.2 pasaba en el navegador.
+
+- **R10.1** Un mismo pago se puede aplicar a un mismo remito en más de una fila
+  (`supabase/019_imputaciones_pago_sin_unique.sql`). Los topes siguen en el trigger.
+- **R10.2** Verificado contra la base real en `npm run verificar:base-proveedores`.
+
 ### R7 — Verificación
 
 - **R7.1** La app compila (`npm run build`) y pasa el lint sin errores nuevos.

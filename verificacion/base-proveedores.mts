@@ -85,8 +85,16 @@ try {
       .insert({ movimiento_id: movId, entrega_id: entregaId, monto: 600 });
     ok(!e1, "Acepta una imputación dentro del saldo ($600 de $1.000)", e1 ? e1.message : "ok");
 
-    // 2) Otra de $600: sumarían $1.200 sobre una entrega de $1.000. Tiene que rebotar.
-    //    (Va como par nuevo para no chocar con el unique de (movimiento, entrega).)
+    // 1b) El mismo pago otra vez contra la misma entrega, dentro de los topes: es lo que hace
+    //     "Aplicar automático" sobre un pago ya aplicado en parte. Hasta la 019 rebotaba por el
+    //     unique (movimiento, entrega) con 23505.
+    const { error: e1b } = await sb
+      .from("imputaciones_pago")
+      .insert({ movimiento_id: movId, entrega_id: entregaId, monto: 300 });
+    ok(!e1b, "Acepta aplicar el mismo pago a la misma entrega en dos veces ($600 + $300) — migración 019",
+      e1b ? `${e1b.code} ${e1b.message.slice(0, 60)}` : "ok");
+
+    // 2) Otra de $600 desde otro pago: sumarían $1.500 sobre una entrega de $1.000. Tiene que rebotar.
     const { data: mv2 } = await sb
       .from("movimientos")
       .insert({ fecha: "2026-08-26", descripcion: MARCA, categoria: "Pago a Proveedor", egreso: 5000, proveedor: MARCA })
