@@ -24,7 +24,9 @@
     "verificar:fechas": "node verificacion/fechas.mts",
     "verificar:municipalidad-calculos": "node verificacion/municipalidad-calculos.mts",
     "verificar:municipalidad": "node verificacion/municipalidad.mjs",
-    "verificar:base-municipalidad": "node verificacion/base-municipalidad.mts"
+    "verificar:base-municipalidad": "node verificacion/base-municipalidad.mts",
+    "verificar:flyer-calculos": "node verificacion/flyer-calculos.mts",
+    "verificar:flyer": "node verificacion/flyer.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",

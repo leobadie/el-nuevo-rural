@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileText, Wallet, Users, TrendingUp, Monitor, Landmark } from "lucide-react";
+import { FileText, Wallet, Users, TrendingUp, Monitor, Landmark, Image as ImageIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { fmtMoney } from "@/lib/cheques/calculos";
 import {
@@ -321,6 +321,24 @@ export default async function Home() {
               <a href="/cartel" target="_blank" rel="noreferrer" style={{ display: "inline-block", background: "#F8F9FA", border: "1px solid #ddd", color: "#1A1A2E", fontSize: 12, fontWeight: 700, padding: "8px 12px", borderRadius: 6, textDecoration: "none" }}>
                 Abrir la pantalla del TV ↗
               </a>
+            </div>
+
+            <div style={{ background: "white", border: "1px solid #e0e0e0", borderTop: "4px solid #1F3864", borderRadius: 10, padding: 18 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: "#1F3864", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <ImageIcon size={17} color="white" />
+                  </div>
+                  <span style={{ fontWeight: 700, color: "#1F3864", fontSize: 15 }}>Flyer de ofertas</span>
+                </div>
+                <Link href="/flyer" style={{ background: "#1F3864", color: "white", fontSize: 12, fontWeight: 700, padding: "6px 10px", borderRadius: 6, textDecoration: "none" }}>
+                  Ver módulo →
+                </Link>
+              </div>
+              <p style={{ fontSize: 12, color: "#555", margin: 0, lineHeight: 1.5 }}>
+                Armá la imagen de las ofertas y descargala para mandar por WhatsApp, subir como
+                estado o cargar en los televisores.
+              </p>
             </div>
           </div>
 
