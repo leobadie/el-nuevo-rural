@@ -67,6 +67,16 @@ dada vuelta: acá la plata te la deben a vos.
   con esa factura ya tildada y el monto cobrado precargado en su saldo.
 - **R3.8** Eliminar una factura (sólo admin) pide confirmación y avisa que se deshacen los
   cobros aplicados (los cobros en sí no se borran).
+- **R3.9** Las facturas se muestran **agrupadas por día de entrega** (decidido el 19/09/2026,
+  porque se cargan de a lotes y la lista corrida ocupaba toda la pantalla). Cada día es una
+  solapa plegable con encabezado clickeable que muestra la fecha, la cantidad de facturas, el
+  monto y el saldo del día. Los días van del más nuevo al más viejo, igual que las filas.
+- **R3.10** Al entrar, **sólo el día más reciente está abierto**; el resto arrancan cerrados.
+  El usuario abre y cierra los que quiera y esa elección se respeta mientras esté en la
+  pantalla. Si hay texto en el buscador, los días arrancan abiertos (si no, un resultado
+  quedaría escondido detrás de una solapa cerrada).
+- **R3.11** El agrupado es sólo visual: los filtros (R3.4) se aplican antes de agrupar, los
+  totales de cada día son sobre lo filtrado, y la fila de totales general (R3.5) no cambia.
 
 ### R4 — Cobros
 
@@ -97,7 +107,8 @@ dada vuelta: acá la plata te la deben a vos.
   pruebas con datos ficticios en `/login/preview-municipalidad` (sólo en desarrollo).
 - **R6.4** Cuadra: `Te debe = Σ saldos de facturas − Σ cobros sin aplicar`.
 - **R6.5** En móvil (390 px) la página no se desborda a lo ancho, y facturas y cobros se ven
-  como tarjetas (con saldo, estado y "Cobrar" a la vista) en lugar de tabla.
+  como tarjetas (con saldo, estado y "Cobrar" a la vista) en lugar de tabla. Las solapas por
+  día (R3.9) funcionan igual en tarjetas que en tabla.
 - **R6.6** Los topes y el cascade se verifican contra la base real
   (`npm run verificar:base-municipalidad`), una vez aplicada la migración.
 - **R6.7** Screenshots de desktop y móvil antes de dar la tarea por terminada.

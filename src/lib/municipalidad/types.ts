@@ -76,3 +76,14 @@ export interface ResumenMunicipalidad {
   /** Cobros que todavía no se aplicaron a ninguna factura. */
   sinAplicar: number;
 }
+
+/** Las facturas de un mismo día de entrega, como las muestra la pantalla: una solapa plegable. */
+export interface GrupoFacturas {
+  /** El día de entrega, en ISO (YYYY-MM-DD). */
+  fecha: string;
+  facturas: FacturaConSaldo[];
+  /** Totales del día, en centavos enteros. */
+  montoC: number;
+  cobradoC: number;
+  saldoC: number;
+}

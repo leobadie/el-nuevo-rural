@@ -32,14 +32,16 @@ function factura(id: string, numero: string | null, entrega: number, monto: numb
  * Escenario:
  * - 101 cobrada entera por un cobro con retenciones ($380.000 + $20.000).
  * - 102 cobrada a medias ($100.000 de $250.000) por un cobro de $150.000 → quedan $50.000 sin aplicar.
- * - 103 y una sin número, pendientes.
+ * - 103 y una sin número, pendientes y entregadas el mismo día: así hay un día con más de una
+ *   factura para probar el agrupado en solapas (R3.9).
  * Te debe = 920.000 − 550.000 = 370.000. La pendiente más vieja (102) tiene 40 días.
  */
 const FACTURAS: FacturaMunicipalidad[] = [
   factura("f1", "0001-00000101", -75, 400000, { orden_compra: "OC 55/2026", lugar_entrega: "Escuela Sarmiento", detalle: "Módulos alimentarios julio" }),
   factura("f2", "0001-00000102", -40, 250000, { orden_compra: "OC 61/2026", lugar_entrega: "Escuela Belgrano" }),
   factura("f3", "0001-00000103", -20, 180000, { lugar_entrega: "Escuela Sarmiento" }),
-  factura("f4", null, -2, 90000, { detalle: "Entrega semana 36" }),
+  // Mismo día de entrega que la 103, y cargada después: dentro del día va primero.
+  factura("f4", null, -20, 90000, { detalle: "Entrega semana 36", creado_el: `${d(-20)}T15:00:00.000Z` }),
 ];
 
 const COBROS: CobroMunicipalidad[] = [

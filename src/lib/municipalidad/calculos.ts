@@ -4,6 +4,7 @@ import type {
   EstadoFactura,
   FacturaConSaldo,
   FacturaMunicipalidad,
+  GrupoFacturas,
   ImputacionCobro,
   ResumenMunicipalidad,
 } from "./types";
@@ -227,4 +228,27 @@ export function filtrarFacturas(
     if (!q) return true;
     return [f.numero_factura, f.orden_compra, f.lugar_entrega, f.detalle].some((v) => v?.toLowerCase().includes(q));
   });
+}
+
+/**
+ * Parte las facturas ya filtradas en un grupo por día de entrega, conservando el orden en que
+ * vienen (la pantalla las pasa de la más nueva a la más vieja). Los totales van en centavos,
+ * como el resto de las sumas, para que no arrastren el error del punto flotante.
+ */
+export function agruparPorEntrega(facturas: FacturaConSaldo[]): GrupoFacturas[] {
+  const grupos: GrupoFacturas[] = [];
+  const porFecha = new Map<string, GrupoFacturas>();
+  for (const f of facturas) {
+    let grupo = porFecha.get(f.fecha_entrega);
+    if (!grupo) {
+      grupo = { fecha: f.fecha_entrega, facturas: [], montoC: 0, cobradoC: 0, saldoC: 0 };
+      porFecha.set(f.fecha_entrega, grupo);
+      grupos.push(grupo);
+    }
+    grupo.facturas.push(f);
+    grupo.montoC += centavos(f.monto);
+    grupo.cobradoC += centavos(f.cobrado);
+    grupo.saldoC += centavos(f.saldo);
+  }
+  return grupos;
 }

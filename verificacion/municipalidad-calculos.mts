@@ -22,6 +22,7 @@ const {
   cobrosConSaldo,
   diasEntre,
   facturasConSaldo,
+  agruparPorEntrega,
   filtrarFacturas,
   repartirFIFO,
   repartirTodoFIFO,
@@ -155,6 +156,31 @@ ok(filtrarFacturas(fs1, "pendientes", "").length === 2, "Pendientes incluye las 
 ok(filtrarFacturas(fs1, "cobradas", "").map((f) => f.id).join() === "A", "Cobradas");
 ok(filtrarFacturas(fs1, "todas", "0001-c").map((f) => f.id).join() === "C", "Busca por número sin importar mayúsculas");
 ok(claveNumeroFactura(" 0001 - 00123 ") === claveNumeroFactura("0001-00123"), "El número se compara sin espacios");
+
+console.log("\n=== Agrupado por día de entrega (R3.9 / R3.11) ===");
+const delDia = facturasConSaldo(
+  [
+    factura("E1", "2026-09-10", "100.10"),
+    factura("E2", "2026-09-10", "200.20"),
+    factura("E3", "2026-09-12", 500),
+  ],
+  [imp("i9", "c9", "E2", "200.20")],
+  HOY,
+);
+// La pantalla agrupa lo que ya filtró y ordenó de la más nueva a la más vieja.
+const paraAgrupar = filtrarFacturas(delDia, "todas", "").reverse();
+const gs = agruparPorEntrega(paraAgrupar);
+ok(gs.length === 2, "Un grupo por día de entrega, no uno por factura", gs.length);
+ok(gs.map((g) => g.fecha).join() === "2026-09-12,2026-09-10", "Respeta el orden recibido: el día más nuevo primero", gs.map((g) => g.fecha));
+// Dentro del día se mantiene el orden que trae la pantalla: la última cargada, primera.
+ok(gs[1].facturas.map((f) => f.id).join() === "E2,E1", "Las facturas del día quedan juntas y en el orden recibido", gs[1].facturas.map((f) => f.id));
+ok(gs[1].montoC === 30030 && gs[1].cobradoC === 20020 && gs[1].saldoC === 10010, "Totales del día en centavos exactos", gs[1]);
+ok(
+  gs.reduce((a, g) => a + g.montoC, 0) === paraAgrupar.reduce((a, f) => a + Math.round(f.monto * 100), 0),
+  "Agrupar no pierde ni duplica montos",
+);
+ok(agruparPorEntrega([]).length === 0, "Sin facturas no hay grupos");
+ok(agruparPorEntrega(filtrarFacturas(fs1, "pendientes", "").reverse()).length === 2, "Agrupa lo ya filtrado, no todo");
 
 console.log(`\n${fallos === 0 ? "Todo OK." : `${fallos} check(s) fallaron.`}`);
 process.exit(fallos === 0 ? 0 : 1);

@@ -19,6 +19,23 @@
   }
 }
 
+/*
+ * Lista de tarjetas que reemplaza a una tabla en el teléfono. Va como clase y no como
+ * `className="sm:hidden" style={{display:"flex"}}`: el style inline le gana a la clase de
+ * Tailwind y la lista se veía también en la computadora, duplicando cada fila de la tabla.
+ */
+.solo-movil {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (min-width: 640px) {
+  .solo-movil {
+    display: none;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

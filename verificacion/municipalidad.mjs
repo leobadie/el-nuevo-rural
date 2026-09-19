@@ -59,6 +59,21 @@ async function main() {
   const filaFactura = (numero) => page.locator('[data-test="fila-factura"]', { hasText: numero });
   const pausa = (ms = 250) => page.waitForTimeout(ms);
 
+  /*
+   * Con las solapas por día (R3.9) lo que está cerrado no está en el DOM. Los checks de filas y
+   * totales necesitan todo abierto, y cada día nuevo (cargar una factura con fecha de hoy, o
+   * cambiar de filtro) arranca cerrado, así que se vuelve a llamar después de cada cambio.
+   */
+  const abrirDias = async (p = page, sel = "cabecera-dia") => {
+    for (let i = 0; i < 20; i++) {
+      const cerradas = p.locator(`[data-test="${sel}"][aria-expanded="false"]`);
+      if ((await cerradas.count()) === 0) return;
+      await cerradas.first().click();
+      await p.waitForTimeout(40);
+    }
+    throw new Error("Quedaron solapas cerradas después de 20 clicks");
+  };
+
   // `networkidle` no resuelve con el HMR de Turbopack: se espera a que aparezca la tabla.
   await page.goto(URL, { waitUntil: "domcontentloaded" });
   await page.waitForSelector('[data-test="fila-factura"]');
@@ -71,6 +86,35 @@ async function main() {
   check("R2.2c", `Cobrado ${plata(550000)} aclarando ${plata(20000)} de retenciones`,
     kpiCob.includes(plata(550000)) && kpiCob.includes(plata(20000)), kpiCob.replace(/\s+/g, " "));
   check("R2.2d", `Cobros sin aplicar ${plata(50000)}`, num(await texto("kpi-sin-aplicar")) === 50000, await texto("kpi-sin-aplicar"));
+
+  // ---------- R3.9 / R3.10: solapas por día de entrega ----------
+  const cabeceras = t("cabecera-dia");
+  const expandidas = () => cabeceras.evaluateAll((els) => els.map((e) => e.getAttribute("aria-expanded")).join());
+  check("R3.9a", "Las 3 pendientes se agrupan en 2 días de entrega", (await cabeceras.count()) === 2, await cabeceras.count());
+  const cab0 = (await cabeceras.first().innerText()).replace(/\s+/g, " ");
+  check("R3.9b", `El día más nuevo dice cuántas facturas tiene y su saldo (${plata(270000)})`,
+    cab0.includes("2 facturas") && cab0.includes(plata(270000)), cab0);
+  check("R3.10a", "Al entrar sólo está abierto el día más reciente", (await expandidas()) === "true,false", await expandidas());
+  check("R3.10b", "Lo cerrado no ocupa lugar: se ven 2 filas de 3 facturas", (await t("fila-factura").count()) === 2, await t("fila-factura").count());
+  check("R3.11a", "El total de la pantalla sigue siendo el de las 3 pendientes", num(await texto("total-saldo")) === 420000, await texto("total-saldo"));
+  // En la computadora va la tabla y nada más: las tarjetas de teléfono duplicaban cada fila.
+  check("R6.5h", "En desktop no se ven además las tarjetas de móvil",
+    (await t("tarjeta-factura").count()) > 0 && !(await t("tarjeta-factura").first().isVisible()),
+    `${await t("tarjeta-factura").count()} tarjetas en el DOM`);
+  await page.screenshot({ path: path.join(OUT, "municipalidad-dias-desktop.png"), fullPage: true });
+
+  await t("buscar-factura").fill("belgrano");
+  await pausa(150);
+  check("R3.10c", "Buscando, el resultado no queda tapado por una solapa cerrada",
+    (await t("fila-factura").count()) === 1 && (await t("fila-factura").innerText()).includes("0001-00000102"),
+    await t("fila-factura").count());
+  await t("buscar-factura").fill("");
+  await pausa(150);
+  await cabeceras.nth(1).click();
+  check("R3.10d", "Abrir a mano el día más viejo suma su factura", (await t("fila-factura").count()) === 3, await t("fila-factura").count());
+  await cabeceras.first().click();
+  check("R3.10e", "Cerrar el día más nuevo esconde sus 2 facturas", (await t("fila-factura").count()) === 1, await t("fila-factura").count());
+  await abrirDias();
 
   // ---------- R3.3 / R3.4 / R3.5: tabla, filtro y totales ----------
   check("R3.4a", "Por defecto muestra sólo las pendientes (3)", (await t("fila-factura").count()) === 3, await t("fila-factura").count());
@@ -86,14 +130,17 @@ async function main() {
   await page.screenshot({ path: path.join(OUT, "municipalidad-facturas-desktop.png"), fullPage: true });
 
   await t("filtro-todas").click();
+  await abrirDias();
   check("R3.4b", "Filtro Todas muestra las 4", (await t("fila-factura").count()) === 4);
   await t("filtro-cobradas").click();
+  await abrirDias();
   check("R3.4c", "Filtro Cobradas muestra sólo la 101", (await t("fila-factura").count()) === 1 && (await t("fila-factura").innerText()).includes("0001-00000101"));
   await t("filtro-todas").click();
   await t("buscar-factura").fill("belgrano");
   check("R3.4d", "El buscador encuentra por lugar de entrega", (await t("fila-factura").count()) === 1 && (await t("fila-factura").innerText()).includes("0001-00000102"));
   await t("buscar-factura").fill("");
   await t("filtro-pendientes").click();
+  await abrirDias();
 
   // ---------- R3.1 / R3.2: cargar factura ----------
   await t("btn-nueva-factura").click();
@@ -115,6 +162,7 @@ async function main() {
   await t("factura-detalle").fill("Módulos septiembre");
   await t("factura-guardar").click();
   await pausa();
+  await abrirDias();
   check("R3.1b", `Cargar una factura de ${plata(60000)} sube la deuda a ${plata(430000)}`,
     (await teDebe()) === 430000 && (await t("form-factura").count()) === 0, await texto("kpi-te-debe"));
   check("R3.1c", "La factura nueva aparece con sus datos",
@@ -125,6 +173,7 @@ async function main() {
   await t("factura-numero").fill("0001-00000105");
   await t("factura-guardar").click();
   await pausa();
+  await abrirDias();
   check("R3.6", "Editar le agrega el número a la factura sin número, sin tocar la deuda",
     (await filaFactura("0001-00000105").count()) === 1 && (await page.locator('[data-test="fila-factura"]', { hasText: "sin número" }).count()) === 0 && (await teDebe()) === 430000);
 
@@ -150,6 +199,7 @@ async function main() {
   await t("cobro-comprobante").fill("OP 1400");
   await t("cobro-guardar").click();
   await pausa();
+  await abrirDias();
   check("R4.1b", `El cobro cancela la factura: te debe baja a ${plata(250000)}`,
     (await t("modal-cobro").count()) === 0 && (await teDebe()) === 250000, await texto("kpi-te-debe"));
   check("R3.3c", "La factura cobrada sale de la lista de pendientes", (await filaFactura("0001-00000103").count()) === 0);
@@ -158,6 +208,7 @@ async function main() {
   check("R4.6a", `Avisa que hay ${plata(50000)} sin aplicar`, (await texto("aviso-sin-aplicar")).includes(plata(50000)));
   await t("btn-repartir-todo").click();
   await pausa();
+  await abrirDias();
   const saldo102 = num(await filaFactura("0001-00000102").locator('[data-test="factura-saldo"]').innerText());
   check("R4.3a", `FIFO: los ${plata(50000)} van a la más vieja (102 queda debiendo ${plata(100000)})`, saldo102 === 100000, saldo102);
   check("R4.6b", "Ya no queda nada sin aplicar y la deuda no cambia",
@@ -223,6 +274,7 @@ async function main() {
 
   await t("tab-facturas").click();
   await t("filtro-todas").click();
+  await abrirDias();
   await filaFactura("0001-00000104").locator('[data-test="btn-eliminar-factura"]').click();
   await page.getByRole("button", { name: "Confirmar" }).click();
   await pausa();
@@ -230,6 +282,7 @@ async function main() {
     (await filaFactura("0001-00000104").count()) === 0 && (await teDebe()) === 190000, await texto("kpi-te-debe"));
 
   await t("filtro-pendientes").click();
+  await abrirDias();
   check("R6.4c", "Al final sigue cuadrando: te debe = Σ saldos − sin aplicar",
     (await teDebe()) === num(await texto("total-saldo")) - ((await t("kpi-sin-aplicar").count()) ? num(await texto("kpi-sin-aplicar")) : 0),
     `${await teDebe()} = ${await texto("total-saldo")} − ${(await t("kpi-sin-aplicar").count()) ? await texto("kpi-sin-aplicar") : 0}`);
@@ -243,6 +296,19 @@ async function main() {
   const desborde = () => mobile.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
   check("R6.5a", "En móvil la página no se desborda a lo ancho", (await desborde()) <= 1, `${await desborde()}px`);
+
+  // R6.5g: las solapas por día también en tarjetas, y sin desbordar el encabezado.
+  const cabsMovil = mobile.locator('[data-test="tarjeta-cabecera-dia"]');
+  const cajaCab = await cabsMovil.first().boundingBox();
+  check("R6.5g", "En móvil hay 2 solapas por día, con sólo la más nueva abierta y sin desbordar",
+    (await cabsMovil.count()) === 2 &&
+      (await cabsMovil.evaluateAll((els) => els.map((e) => e.getAttribute("aria-expanded")).join())) === "true,false" &&
+      (await mobile.locator('[data-test="tarjeta-factura"]').count()) === 2 &&
+      !!cajaCab && cajaCab.x >= 0 && cajaCab.x + cajaCab.width <= 390,
+    JSON.stringify(cajaCab));
+  await mobile.screenshot({ path: path.join(OUT, "municipalidad-dias-movil.png"), fullPage: true });
+  await abrirDias(mobile, "tarjeta-cabecera-dia");
+
   const tarjetas = mobile.locator('[data-test="tarjeta-factura"]');
   check("R6.5e", "En móvil las facturas se ven como tarjetas, no como tabla",
     (await tarjetas.count()) === 3 && !(await mobile.locator('[data-test="fila-factura"]').first().isVisible()), `${await tarjetas.count()} tarjetas`);

@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Pencil, Plus, Trash2, X } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { ChevronRight, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
+  agruparPorEntrega,
   centavos,
   claveNumeroFactura,
   cobrosConSaldo,
@@ -24,6 +25,7 @@ import type {
   EstadoFactura,
   FacturaConSaldo,
   FacturaMunicipalidad,
+  GrupoFacturas,
   ImputacionCobro,
   MedioCobro,
   NuevaFacturaMunicipalidad,
@@ -89,6 +91,41 @@ function Chip({ estado }: { estado: EstadoFactura }) {
     <span style={{ background: c.bg, color: c.tx, fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 12, whiteSpace: "nowrap" }}>
       {estado}
     </span>
+  );
+}
+
+/** El encabezado clickeable de un día de entrega: abre y cierra las facturas de ese día. */
+function CabeceraDia({ grupo, abierto, onToggle, test }: { grupo: GrupoFacturas; abierto: boolean; onToggle: () => void; test: string }) {
+  const n = grupo.facturas.length;
+  return (
+    <button
+      onClick={onToggle}
+      aria-expanded={abierto}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap",
+        background: abierto ? "#DDEEE9" : "#F0F5F4",
+        border: "none",
+        borderRadius: 6,
+        padding: "9px 10px",
+        cursor: "pointer",
+        textAlign: "left",
+        color: "#1A1A2E",
+        fontFamily: "inherit",
+      }}
+      data-test={test}
+    >
+      <ChevronRight size={15} style={{ flexShrink: 0, transform: abierto ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+      <strong style={{ fontSize: 13, whiteSpace: "nowrap" }}>{fmtDate(grupo.fecha)}</strong>
+      <span style={{ fontSize: 12, color: "#555", whiteSpace: "nowrap" }}>{n === 1 ? "1 factura" : `${n} facturas`}</span>
+      <span style={{ fontSize: 12, color: "#555", marginLeft: "auto", whiteSpace: "nowrap" }}>
+        {fmtMoney(grupo.montoC / 100)} · saldo{" "}
+        <strong style={{ color: grupo.saldoC > 0 ? ROJO_TX : VERDE }} data-test="dia-saldo">{fmtMoney(grupo.saldoC / 100)}</strong>
+      </span>
+    </button>
   );
 }
 
@@ -414,10 +451,17 @@ function TablaFacturas({
 }) {
   const [estado, setEstado] = useState<"pendientes" | "cobradas" | "todas">("pendientes");
   const [texto, setTexto] = useState("");
+  // Lo que el usuario abrió o cerró a mano. Lo que no tocó sigue el default de abajo.
+  const [plegado, setPlegado] = useState<Record<string, boolean>>({});
   // Las más nuevas arriba: es lo que se busca al cargar o cobrar. El cálculo las da al revés.
   const visibles = useMemo(() => filtrarFacturas(facturas, estado, texto).reverse(), [facturas, estado, texto]);
-  const tot = visibles.reduce(
-    (a, f) => ({ monto: a.monto + centavos(f.monto), cobrado: a.cobrado + centavos(f.cobrado), saldo: a.saldo + centavos(f.saldo) }),
+  const grupos = useMemo(() => agruparPorEntrega(visibles), [visibles]);
+  const buscando = texto.trim() !== "";
+  // Sólo el día más nuevo arranca abierto; buscando arrancan todos, o el resultado quedaría tapado.
+  const estaAbierto = (fecha: string, i: number) => plegado[fecha] ?? (buscando || i === 0);
+  const alternar = (fecha: string, i: number) => setPlegado((p) => ({ ...p, [fecha]: !estaAbierto(fecha, i) }));
+  const tot = grupos.reduce(
+    (a, g) => ({ monto: a.monto + g.montoC, cobrado: a.cobrado + g.cobradoC, saldo: a.saldo + g.saldoC }),
     { monto: 0, cobrado: 0, saldo: 0 },
   );
 
@@ -474,7 +518,14 @@ function TablaFacturas({
                 </td>
               </tr>
             )}
-            {visibles.map((f, i) => (
+            {grupos.map((g, gi) => (
+              <Fragment key={g.fecha}>
+                <tr>
+                  <td colSpan={10} style={{ padding: "4px 6px", borderTop: gi === 0 ? "none" : "1px solid #ddd" }}>
+                    <CabeceraDia grupo={g} abierto={estaAbierto(g.fecha, gi)} onToggle={() => alternar(g.fecha, gi)} test="cabecera-dia" />
+                  </td>
+                </tr>
+                {estaAbierto(g.fecha, gi) && g.facturas.map((f, i) => (
               <tr key={f.id} style={{ background: i % 2 === 1 ? "#F2F8F6" : "white", borderTop: "1px solid #eee" }} data-test="fila-factura">
                 <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
                   {fmtDate(f.fecha_entrega)}
@@ -515,6 +566,8 @@ function TablaFacturas({
                   )}
                 </td>
               </tr>
+                ))}
+              </Fragment>
             ))}
           </tbody>
           {visibles.length > 0 && (
@@ -531,13 +584,16 @@ function TablaFacturas({
         </table>
       </div>
 
-      <div className="sm:hidden" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="solo-movil">
         {visibles.length === 0 && (
           <p style={{ textAlign: "center", color: "#888", fontSize: 13, padding: 16 }}>
             {facturas.length === 0 ? "Todavía no hay facturas cargadas." : "No hay facturas con este filtro."}
           </p>
         )}
-        {visibles.map((f) => (
+        {grupos.map((g, gi) => (
+          <div key={g.fecha} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <CabeceraDia grupo={g} abierto={estaAbierto(g.fecha, gi)} onToggle={() => alternar(g.fecha, gi)} test="tarjeta-cabecera-dia" />
+            {estaAbierto(g.fecha, gi) && g.facturas.map((f) => (
           <div key={f.id} style={{ border: "1px solid #ddd", borderLeft: `4px solid ${COLOR_ESTADO[f.estado].tx}`, borderRadius: 8, padding: 12 }} data-test="tarjeta-factura">
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
               <div style={{ minWidth: 0 }}>
@@ -578,6 +634,8 @@ function TablaFacturas({
                 </button>
               )}
             </div>
+          </div>
+            ))}
           </div>
         ))}
         {visibles.length > 0 && (
@@ -701,7 +759,7 @@ function TablaCobros({
         </table>
       </div>
 
-      <div className="sm:hidden" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="solo-movil">
         {cobros.length === 0 && <p style={{ textAlign: "center", color: "#888", fontSize: 13, padding: 16 }}>Todavía no hay cobros registrados.</p>}
         {cobros.map((c) => (
           <div key={c.id} style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }} data-test="tarjeta-cobro">
