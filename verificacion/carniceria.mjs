@@ -269,6 +269,35 @@ async function main() {
   await t("especie-cerdo").click();
   check("R5j", "El cerdo tiene su propio historial", (await t("sin-medias").count()) === 1);
 
+  // ---------- R27 / R28: piernas de cerdo ----------
+  await t("corte-pierna").click();
+  check("R27a", "En Cerdo se elige Media res o Piernas", (await texto("corte-pierna")) === "Piernas (0)" && (await texto("sin-medias")).includes("piernas"), await texto("sin-medias"));
+  // Después de editar, el formulario queda abierto: se abre sólo si hace falta.
+  if (await t("abrir-form-media").count()) await t("abrir-form-media").click();
+  check("R27d", "El formulario dice que es una compra de piernas", (await texto("form-media")).includes("piernas de cerdo"));
+  await llenar({ abastecedor: "Frigorífico Río", kg_factura: 12, precio_kg: "6.000", hueso_kg: "1,8", grasa_kg: "1,2", merma_kg: "0,3", precio_grasero: 0 });
+  await t("guardar-media").click();
+  await pausa(300);
+  check("R27b", "Una pierna despostada da su costo real: 72.000 / 8,7 kg = $ 8.276",
+    (await t("fila-media").count()) === 1 && (await texto("costo-real-media")) === "$ 8.276", await texto("costo-real-media"));
+  await page.getByRole("button", { name: "Cerrar" }).click();
+  await t("corte-media_res").click();
+  check("R27c", "Las piernas no aparecen entre las medias reses de cerdo", (await t("sin-medias").count()) === 1 && (await texto("especie-cerdo")) === "Cerdo (1)");
+
+  // Combos y juegos: igual que las piernas, cada uno por su lado.
+  check("R27e", "En Cerdo también están Combos y Juegos",
+    (await texto("corte-combo")) === "Combos (0)" && (await texto("corte-juego")) === "Juegos (0)", `${await texto("corte-combo")} / ${await texto("corte-juego")}`);
+  await t("corte-juego").click();
+  if (await t("abrir-form-media").count()) await t("abrir-form-media").click();
+  check("R27f", "El formulario dice que es una compra de juegos", (await texto("form-media")).includes("juegos de cerdo"), await texto("form-media"));
+  await llenar({ abastecedor: "Frigorífico Río", kg_factura: 8, precio_kg: "7.000" });
+  await t("guardar-media").click();
+  await pausa(300);
+  check("R27g", "Se guarda un juego y queda en su lista, no en piernas ni combos",
+    (await t("fila-media").count()) === 1 && (await texto("corte-juego")) === "Juegos (1)" && (await texto("corte-pierna")) === "Piernas (1)" && (await texto("corte-combo")) === "Combos (0)");
+  await page.getByRole("button", { name: "Cerrar" }).click();
+  await t("corte-media_res").click();
+
   // ---------- R19 a R23: cajones de pollo ----------
   await t("especie-pollo").click();
   await t("sin-pollo").waitFor();
@@ -307,7 +336,26 @@ async function main() {
   await t("guardar-pollo").click();
   await pausa(300);
 
+  // ---------- R24 / R25: productos de pollo ----------
+  await t("p-producto").selectOption("pata_muslo");
+  await llenarPollo({ proveedor: "Granja Sur", cajones: 4, kg_total: 60, precio_kg: "5.200" });
+  await t("guardar-pollo").click();
+  await pausa(300);
+  check("R24a", "Se carga pata y muslo, con su producto en la lista",
+    (await t("fila-pollo").count()) === 3 && (await page.locator('[data-test="fila-pollo"]', { hasText: "Pata y muslo" }).count()) === 1);
+  check("R25a", "Cuadro de 30 días por producto", (await page.locator('[data-test="fila-pollo-producto"]').count()) === 2, await page.locator('[data-test="fila-pollo-producto"]').count());
+  await t("producto-pata_muslo").click();
+  const res30pata = await texto("resumen-pollo-30");
+  check("R25b", "Filtrando pata y muslo: 1 ingreso, 4 cajones de 15 kg",
+    (await t("fila-pollo").count()) === 1 && res30pata.includes("60,0 kg") && res30pata.includes("15,0 kg"), res30pata);
+  check("R25c", "El formulario queda con el producto filtrado", (await t("p-producto").inputValue()) === "pata_muslo");
+  await page.screenshot({ path: path.join(OUT, "carniceria-pollo-pata-desktop.png"), fullPage: true, caret: "initial" });
+  await t("producto-todos").click();
+
   await t("tab-calculadoras").click();
+  await abrir(6);
+  check("R28", "El módulo 6 no toma la pierna: sigue con el ejemplo de media res", (await origen("m6.kg_factura")) === "ejemplo" && (await principal()) === "7.003 $/kg",
+    `${await origen("m6.kg_factura")} ${await principal()}`);
   await abrir(7);
   check("R22a", "El módulo 7 toma los kilos por cajón del historial (310 / 15)", (await origen("m7.kg")) === "auto" && (await t("input-m7.kg").inputValue()) === "20,667",
     `${await origen("m7.kg")} ${await t("input-m7.kg").inputValue()}`);

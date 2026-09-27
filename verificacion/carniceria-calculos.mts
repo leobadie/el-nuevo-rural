@@ -24,8 +24,10 @@ const {
   calcularCarniceria,
   calcularMediaRes,
   fix,
+  filtrarPollo,
   parseNumero,
   polloUltimoMes,
+  resumenPolloPorProducto,
   promediosHistorial,
   resumenPolloPorMes,
   resumenPolloPorProveedor,
@@ -215,7 +217,7 @@ console.log("\n=== Historial de medias reses ===");
 let n = 0;
 function media(fecha: string, extra: Partial<MediaRes> = {}): MediaRes {
   return {
-    id: `m${++n}`, fecha, abastecedor: "Frigorífico Río", especie: "vaca",
+    id: `m${++n}`, fecha, abastecedor: "Frigorífico Río", especie: "vaca", corte: "media_res",
     kg_factura: 110, precio_kg: 10600, kg_balanza: 109, dias_camara: 2,
     hueso_kg: 18, grasa_kg: 7, merma_kg: 2.6, precio_grasero: 800, notas: null, ...extra,
   };
@@ -258,8 +260,8 @@ ok(porAb[0].clave === "Frigorífico Río" && porAb[0].cantidad === 3 && porAb[1]
 console.log("\n=== Cajones de pollo (SPEC 19 a 23) ===");
 type Ingreso = NonNullable<Entrada["pollo"]>[number];
 let np = 0;
-const ingreso = (fecha: string, cajones: number, kg_total: number, precio_kg: number, proveedor: string | null = "Granja Sur"): Ingreso =>
-  ({ id: `p${++np}`, fecha, proveedor, cajones, kg_total, precio_kg, notas: null });
+const ingreso = (fecha: string, cajones: number, kg_total: number, precio_kg: number, proveedor: string | null = "Granja Sur", producto: Ingreso["producto"] = "entero"): Ingreso =>
+  ({ id: `p${++np}`, fecha, proveedor, producto, cajones, kg_total, precio_kg, notas: null });
 const pollo = [
   ingreso("2026-09-25", 10, 200, 3000),
   ingreso("2026-09-10", 5, 110, 3200, "Avícola Norte"),
@@ -288,6 +290,42 @@ const polloMes = resumenPolloPorMes(pollo);
 ok(polloMes.map((x) => x.clave).join() === "2026-09,2026-08" && polloMes[0].cajones === 18, "Resumen mes a mes (septiembre incluye todo el mes)", polloMes.map((x) => `${x.clave}:${x.cajones}`));
 const polloProv = resumenPolloPorProveedor(pollo);
 ok(polloProv[0].clave === "Granja Sur" && polloProv[0].cajones === 33 && polloProv[1].clave === "Avícola Norte", "Por proveedor, el que más cajones mandó primero", polloProv.map((x) => `${x.clave}:${x.cajones}`));
+
+// ============================================================================
+console.log("\n=== Productos de pollo y piernas de cerdo (SPEC 24 a 28) ===");
+const polloMix = [
+  ...pollo,
+  ingreso("2026-09-24", 4, 60, 5200, "Granja Sur", "pata_muslo"),
+  ingreso("2026-09-23", 2, 20, 9800, "Avícola Norte", "pechuga"),
+];
+const conPartes = calcular({ ...ajustesM10 }, { pollo: polloMix });
+ok(cerca(campo(conPartes, "m7.kg").valor, 310 / 15, 1e-9) && cerca(campo(conPartes, "m7.compra").valor, 952000 / 310, 1e-9),
+  "El módulo 7 ignora pata y muslo y pechuga: sigue con el pollo entero", campo(conPartes, "m7.kg").valor);
+ok(conPartes.historial.pollo === 2, "El aviso cuenta sólo los ingresos de pollo entero", conPartes.historial.pollo);
+const porProd = resumenPolloPorProducto(polloMix, HOY);
+ok(porProd.map((x) => x.producto).join() === "entero,pata_muslo,pechuga", "Resumen por producto: sólo los que tienen algo, en orden", porProd.map((x) => x.producto));
+const pm = porProd.find((x) => x.producto === "pata_muslo")!;
+ok(pm.cajones === 4 && pm.kgPorCajon === 15 && pm.precioPromedio === 5200, "Pata y muslo: 4 cajones de 15 kg a 5.200", pm);
+ok(filtrarPollo(polloMix, "pechuga").length === 1 && filtrarPollo(polloMix, null).length === polloMix.length, "Filtrar por producto");
+const viejo = { ...pollo[0], producto: undefined } as unknown as Ingreso;
+ok(polloUltimoMes([viejo], HOY, "entero").length === 1, "Un ingreso cargado antes de la 022 (sin producto) cuenta como pollo entero");
+
+const mediaCerdo = media("2026-09-20", { especie: "cerdo", kg_factura: 45, precio_kg: 5300, hueso_kg: 5.4, grasa_kg: 5, merma_kg: 0.9, precio_grasero: 500 });
+const pierna = media("2026-09-22", { especie: "cerdo", corte: "pierna", kg_factura: 12, precio_kg: 6000, kg_balanza: null, hueso_kg: 1.8, grasa_kg: 1.2, merma_kg: 0.3, precio_grasero: 0 });
+const conPierna = calcular({ ...ajustesM10 }, { medias: [mediaCerdo, pierna] });
+ok(cerca(mod(conPierna, 6).principal.valor, 7002.967, 0.001) && conPierna.historial.cerdo === 1, "La pierna no cambia el módulo 6 ni se cuenta como media res", mod(conPierna, 6).principal.valor);
+ok(ultimoMes([mediaCerdo, pierna], "cerdo", HOY, "pierna").length === 1, "Las piernas del último mes se piden aparte");
+const cp = calcularMediaRes(pierna);
+ok(cerca(cp.rendimiento ?? NaN, ((12 - 3.3) / 12) * 100, 1e-9) && cerca(cp.costoReal ?? NaN, (12 * 6000) / 8.7, 1e-9), "Costo real y rendimiento de una pierna", cp);
+ok(resumenPorMes([mediaCerdo, pierna], "cerdo", "pierna")[0].cantidad === 1 && resumenPorMes([mediaCerdo, pierna], "cerdo")[0].cantidad === 1, "Resúmenes separados de media res y pierna");
+const combo = media("2026-09-21", { especie: "cerdo", corte: "combo", kg_factura: 20, precio_kg: 5000, hueso_kg: null, grasa_kg: null, merma_kg: null });
+const juego = media("2026-09-21", { especie: "cerdo", corte: "juego", kg_factura: 8, precio_kg: 7000 });
+const conTodo = calcular({ ...ajustesM10 }, { medias: [mediaCerdo, pierna, combo, juego] });
+ok(cerca(mod(conTodo, 6).principal.valor, 7002.967, 0.001) && conTodo.historial.cerdo === 1, "Combos y juegos tampoco tocan el módulo 6");
+ok(ultimoMes([mediaCerdo, pierna, combo, juego], "cerdo", HOY, "combo").length === 1 && ultimoMes([mediaCerdo, pierna, combo, juego], "cerdo", HOY, "juego").length === 1,
+  "Combos y juegos se piden cada uno por su lado");
+const mediaVieja = { ...mediaCerdo, corte: undefined } as unknown as MediaRes;
+ok(ultimoMes([mediaVieja], "cerdo", HOY).length === 1, "Una media res cargada antes de la 022 (sin corte) cuenta como media res");
 
 console.log(`\n${fallos === 0 ? "TODO OK" : `${fallos} FALLA(S)`}`);
 process.exit(fallos === 0 ? 0 : 1);

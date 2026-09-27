@@ -12,7 +12,7 @@ import {
   type ResumenGrupo,
 } from "@/lib/carniceria/calculos";
 import { hoyISO } from "@/lib/fechas";
-import type { Especie, IngresoPollo, MediaRes, NuevaMediaRes } from "@/lib/carniceria/types";
+import type { CorteCompra, Especie, IngresoPollo, MediaRes, NuevaMediaRes } from "@/lib/carniceria/types";
 import PolloSeccion, { type AccionesPollo } from "./PolloSeccion";
 import { ROJO, Secundario, TablaScroll, botonPrimario, botonSecundario, num, tarjeta, tdStyle, thStyle } from "./ui";
 
@@ -46,6 +46,14 @@ function fechaCorta(iso: string): string {
   return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}`;
 }
 
+/** Cómo se nombra cada cosa que se compra de cerdo, en botones y títulos (SPEC 27). */
+const TEXTOS_CORTE: Record<CorteCompra, { boton: string; plural: string; singular: string; cargar: string; nueva: string; guardar: string; cada: string }> = {
+  media_res: { boton: "Media res", plural: "Medias reses", singular: "media res", cargar: "una media res de cerdo", nueva: "Nueva media res de cerdo", guardar: "Guardar media res", cada: "Cada media res" },
+  pierna: { boton: "Piernas", plural: "Piernas", singular: "pierna", cargar: "piernas de cerdo", nueva: "Nueva compra de piernas de cerdo", guardar: "Guardar piernas", cada: "Cada compra de piernas" },
+  combo: { boton: "Combos", plural: "Combos", singular: "combo", cargar: "combos de cerdo", nueva: "Nueva compra de combos de cerdo", guardar: "Guardar combos", cada: "Cada compra de combos" },
+  juego: { boton: "Juegos", plural: "Juegos", singular: "juego", cargar: "juegos de cerdo", nueva: "Nueva compra de juegos de cerdo", guardar: "Guardar juegos", cada: "Cada compra de juegos" },
+};
+
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const nombreMes = (ym: string) => `${MESES[+ym.slice(5, 7) - 1]} ${ym.slice(0, 4)}`;
 
@@ -68,6 +76,12 @@ export default function MediasResesTab({
   const [seleccion, setSeleccion] = useState<Especie | "pollo">("vaca");
   const especie: Especie = seleccion === "pollo" ? "vaca" : seleccion;
   const setEspecie = (e: Especie) => setSeleccion(e);
+  // Del cerdo se compran medias reses, piernas, combos y juegos; de la vaca, sólo medias reses (SPEC 27).
+  const [corteCerdo, setCorteCerdo] = useState<CorteCompra>("media_res");
+  const corte: CorteCompra = especie === "cerdo" ? corteCerdo : "media_res";
+  const esSuelto = corte !== "media_res";
+  const tx = TEXTOS_CORTE[corte];
+  const queEs = tx.singular;
   const [form, setForm] = useState<Formulario>(vacio);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,13 +90,16 @@ export default function MediasResesTab({
 
   const hoy = hoyISO();
   const deEspecie = useMemo(
-    () => medias.filter((m) => m.especie === especie).sort((a, b) => b.fecha.localeCompare(a.fecha) || (b.creado_el ?? "").localeCompare(a.creado_el ?? "")),
-    [medias, especie],
+    () =>
+      medias
+        .filter((m) => m.especie === especie && (m.corte ?? "media_res") === corte)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha) || (b.creado_el ?? "").localeCompare(a.creado_el ?? "")),
+    [medias, especie, corte],
   );
-  const ultimos30 = useMemo(() => ultimoMes(medias, especie, hoy), [medias, especie, hoy]);
+  const ultimos30 = useMemo(() => ultimoMes(medias, especie, hoy, corte), [medias, especie, hoy, corte]);
   const resumen30 = useMemo(() => (ultimos30.length ? resumir("30 días", ultimos30) : null), [ultimos30]);
-  const porMes = useMemo(() => resumenPorMes(medias, especie), [medias, especie]);
-  const porAbastecedor = useMemo(() => resumenPorAbastecedor(medias, especie), [medias, especie]);
+  const porMes = useMemo(() => resumenPorMes(medias, especie, corte), [medias, especie, corte]);
+  const porAbastecedor = useMemo(() => resumenPorAbastecedor(medias, especie, corte), [medias, especie, corte]);
   const abastecedores = useMemo(() => [...new Set(medias.map((m) => m.abastecedor?.trim()).filter(Boolean))].sort() as string[], [medias]);
 
   const set = (k: keyof Formulario) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -90,6 +107,7 @@ export default function MediasResesTab({
   function editar(m: MediaRes) {
     setEditandoId(m.id);
     setEspecie(m.especie);
+    if (m.especie === "cerdo") setCorteCerdo(m.corte ?? "media_res");
     setForm({
       fecha: m.fecha,
       abastecedor: m.abastecedor ?? "",
@@ -159,13 +177,14 @@ export default function MediasResesTab({
       return setError("Para el desposte cargá las tres cosas: hueso, grasa y merma (puede ser 0).");
     }
     if (algunoDesposte && (hueso! + grasa! + merma!) >= kg) {
-      return setError("El hueso, la grasa y la merma no pueden pesar tanto como la media res.");
+      return setError(`El hueso, la grasa y la merma no pueden pesar tanto como la ${queEs}.`);
     }
 
     const datos: NuevaMediaRes = {
       fecha: form.fecha,
       abastecedor: form.abastecedor.trim() || null,
       especie,
+      corte,
       kg_factura: kg,
       precio_kg: precio!,
       kg_balanza: balanza,
@@ -217,15 +236,40 @@ export default function MediasResesTab({
     );
   }
 
-  const vista = previsualizar(form, especie);
-  const etiquetaGrasa = especie === "vaca" ? "Grasa y sebo" : "Cuero, grasa y tocino";
+  const vista = previsualizar(form, especie, corte);
+  const etiquetaGrasa = especie === "vaca" ? "Grasa y sebo" : esSuelto ? "Cuero y grasa" : "Cuero, grasa y tocino";
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }}>
       {selector}
 
+      {especie === "cerdo" && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} role="tablist" aria-label="Qué se compró">
+          {(Object.keys(TEXTOS_CORTE) as CorteCompra[]).map((c) => {
+            const activo = corteCerdo === c;
+            const cantidad = medias.filter((m) => m.especie === "cerdo" && (m.corte ?? "media_res") === c).length;
+            return (
+              <button
+                key={c}
+                type="button"
+                role="tab"
+                aria-selected={activo}
+                data-test={`corte-${c}`}
+                onClick={() => {
+                  if (editandoId) cancelar();
+                  setCorteCerdo(c);
+                }}
+                style={{ ...botonSecundario, padding: "6px 12px", background: activo ? "#FDEDEC" : "white", borderColor: activo ? ROJO : "#ccc", color: activo ? ROJO : "#1A1A2E" }}
+              >
+                {TEXTOS_CORTE[c].boton} ({cantidad})
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 160px), 1fr))", gap: 8 }} data-test="resumen-30">
-        <Secundario r={{ etiqueta: "Medias reses (30 días)", valor: ultimos30.length, unidad: "", decimales: 0 }} />
+        <Secundario r={{ etiqueta: `${tx.plural} (30 días)`, valor: ultimos30.length, unidad: "", decimales: 0 }} />
         <Secundario r={{ etiqueta: "Costo real del kilo", valor: resumen30?.costoReal ?? NaN, unidad: "$/kg", decimales: 0 }} />
         <Secundario r={{ etiqueta: "Rendimiento", valor: resumen30?.rendimiento ?? NaN, unidad: "%", decimales: 1 }} />
         <Secundario r={{ etiqueta: "Romana: kilos que no llegan", valor: resumen30?.romanaPct ?? NaN, unidad: "%", decimales: 2 }} />
@@ -235,12 +279,12 @@ export default function MediasResesTab({
       <div style={tarjeta} id="form-media">
         {!abierto ? (
           <button type="button" style={botonPrimario} onClick={() => setAbierto(true)} data-test="abrir-form-media">
-            + Cargar {especie === "vaca" ? "una media res" : "una media res de cerdo"}
+            + Cargar {especie === "vaca" ? "una media res" : tx.cargar}
           </button>
         ) : (
           <div data-test="form-media">
             <h3 style={{ margin: "0 0 8px", fontSize: 15, color: ROJO }}>
-              {editandoId ? "Editar media res" : `Nueva media res de ${especie}`}
+              {editandoId ? `Editar ${queEs}` : especie === "vaca" ? "Nueva media res de vaca" : tx.nueva}
             </h3>
             <div style={grillaForm}>
               <Campo etiqueta="Fecha">
@@ -303,7 +347,7 @@ export default function MediasResesTab({
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
               <button type="button" style={botonPrimario} onClick={guardar} disabled={guardando} data-test="guardar-media">
-                {guardando ? "Guardando…" : editandoId ? "Guardar cambios" : "Guardar media res"}
+                {guardando ? "Guardando…" : editandoId ? "Guardar cambios" : tx.guardar}
               </button>
               <button type="button" style={botonSecundario} onClick={cancelar}>
                 {editandoId ? "Cancelar" : "Cerrar"}
@@ -314,11 +358,12 @@ export default function MediasResesTab({
       </div>
 
       <div style={tarjeta}>
-        <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Cada media res</h3>
+        <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>{tx.cada}</h3>
         {deEspecie.length === 0 ? (
           <p style={{ margin: 0, fontSize: 13, color: "#666" }} data-test="sin-medias">
-            Todavía no cargaste ninguna. Pesá la próxima cuando baja del camión y, cuando la despostes, el hueso, la grasa
-            y el recorte.
+            {esSuelto
+              ? `Todavía no cargaste ${tx.plural.toLowerCase()}. Anotá los kilos y el precio de la factura y, si los despostás, el hueso, el cuero y la grasa: así sabés lo que te cuesta de verdad el kilo.`
+              : "Todavía no cargaste ninguna. Pesá la próxima cuando baja del camión y, cuando la despostes, el hueso, la grasa y el recorte."}
           </p>
         ) : (
           <TablaScroll>
@@ -380,11 +425,12 @@ export default function MediasResesTab({
         )}
       </div>
 
-      {porMes.length > 0 && <TablaResumen titulo="Mes a mes" columna="Mes" grupos={porMes} etiqueta={nombreMes} dataTest="tabla-por-mes" />}
+      {porMes.length > 0 && <TablaResumen titulo="Mes a mes" columna="Mes" cantidad={esSuelto ? "Compras" : "Medias"} grupos={porMes} etiqueta={nombreMes} dataTest="tabla-por-mes" />}
       {porAbastecedor.length > 0 && (
         <TablaResumen
           titulo="Por abastecedor"
-          subtitulo="Para hablar con el abastecedor con los números en la mano: la romana de todas las medias reses que te mandó."
+          subtitulo={`Para hablar con el abastecedor con los números en la mano: la romana de todo lo que te mandó (${tx.plural.toLowerCase()}).`}
+          cantidad={esSuelto ? "Compras" : "Medias"}
           columna="Abastecedor"
           grupos={porAbastecedor}
           etiqueta={(x) => x}
@@ -402,6 +448,7 @@ function TablaResumen({
   grupos,
   etiqueta,
   dataTest,
+  cantidad,
 }: {
   titulo: string;
   subtitulo?: string;
@@ -409,6 +456,8 @@ function TablaResumen({
   grupos: ResumenGrupo[];
   etiqueta: (clave: string) => string;
   dataTest: string;
+  /** Encabezado de la columna de cantidad: "Medias" o "Compras" (piernas, combos, juegos). */
+  cantidad: string;
 }) {
   return (
     <div style={tarjeta}>
@@ -419,7 +468,7 @@ function TablaResumen({
           <thead>
             <tr>
               <th style={thStyle}>{columna}</th>
-              <th style={{ ...thStyle, textAlign: "right" }}>Medias</th>
+              <th style={{ ...thStyle, textAlign: "right" }}>{cantidad}</th>
               <th style={{ ...thStyle, textAlign: "right" }}>$/kg prom.</th>
               <th style={{ ...thStyle, textAlign: "right" }}>Romana</th>
               <th style={{ ...thStyle, textAlign: "right" }}>Plata en romana</th>
@@ -450,7 +499,7 @@ function TablaResumen({
 }
 
 /** Lo que va a dar la media res antes de guardarla, con la cuenta del módulo 1. */
-function previsualizar(form: Formulario, especie: Especie): string | null {
+function previsualizar(form: Formulario, especie: Especie, corte: CorteCompra): string | null {
   const n = (k: keyof Formulario) => parseNumero(form[k]);
   const kg = n("kg_factura");
   const precio = n("precio_kg");
@@ -460,6 +509,7 @@ function previsualizar(form: Formulario, especie: Especie): string | null {
     fecha: form.fecha,
     abastecedor: null,
     especie,
+    corte,
     kg_factura: kg,
     precio_kg: precio,
     kg_balanza: n("kg_balanza"),

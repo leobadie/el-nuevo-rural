@@ -2,9 +2,19 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 import { Pencil, Trash2 } from "lucide-react";
-import { parseNumero, polloUltimoMes, resumenPolloPorMes, resumenPolloPorProveedor, resumirPollo, type ResumenPollo } from "@/lib/carniceria/calculos";
+import {
+  NOMBRE_PRODUCTO_POLLO,
+  filtrarPollo,
+  parseNumero,
+  polloUltimoMes,
+  resumenPolloPorMes,
+  resumenPolloPorProducto,
+  resumenPolloPorProveedor,
+  resumirPollo,
+  type ResumenPollo,
+} from "@/lib/carniceria/calculos";
 import { hoyISO } from "@/lib/fechas";
-import type { IngresoPollo, NuevoIngresoPollo } from "@/lib/carniceria/types";
+import type { IngresoPollo, NuevoIngresoPollo, ProductoPollo } from "@/lib/carniceria/types";
 import { ROJO, Secundario, TablaScroll, botonPrimario, botonSecundario, num, tarjeta, tdStyle, thStyle } from "./ui";
 
 export interface AccionesPollo {
@@ -12,9 +22,11 @@ export interface AccionesPollo {
   eliminarPollo: (id: string) => void;
 }
 
-type Formulario = Record<"fecha" | "proveedor" | "cajones" | "kg_total" | "precio_kg" | "notas", string>;
+type Formulario = Record<"fecha" | "proveedor" | "cajones" | "kg_total" | "precio_kg" | "notas", string> & { producto: ProductoPollo };
 
-const vacio = (): Formulario => ({ fecha: hoyISO(), proveedor: "", cajones: "", kg_total: "", precio_kg: "", notas: "" });
+const vacio = (producto: ProductoPollo = "entero"): Formulario => ({ fecha: hoyISO(), proveedor: "", producto, cajones: "", kg_total: "", precio_kg: "", notas: "" });
+const PRODUCTOS = Object.keys(NOMBRE_PRODUCTO_POLLO) as ProductoPollo[];
+const productoDe = (x: IngresoPollo): ProductoPollo => x.producto ?? "entero";
 const aTexto = (n: number) => String(n).replace(".", ",");
 const fechaCorta = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}`;
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
@@ -37,15 +49,19 @@ export default function PolloSeccion({
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [abierto, setAbierto] = useState(false);
+  // null = todos los productos (SPEC 25).
+  const [filtro, setFiltro] = useState<ProductoPollo | null>(null);
 
   const hoy = hoyISO();
+  const filtrado = useMemo(() => filtrarPollo(pollo, filtro), [pollo, filtro]);
   const ordenados = useMemo(
-    () => [...pollo].sort((a, b) => b.fecha.localeCompare(a.fecha) || (b.creado_el ?? "").localeCompare(a.creado_el ?? "")),
-    [pollo],
+    () => [...filtrado].sort((a, b) => b.fecha.localeCompare(a.fecha) || (b.creado_el ?? "").localeCompare(a.creado_el ?? "")),
+    [filtrado],
   );
-  const mes = useMemo(() => resumirPollo("30 días", polloUltimoMes(pollo, hoy)), [pollo, hoy]);
-  const porMes = useMemo(() => resumenPolloPorMes(pollo), [pollo]);
-  const porProveedor = useMemo(() => resumenPolloPorProveedor(pollo), [pollo]);
+  const mes = useMemo(() => resumirPollo("30 días", polloUltimoMes(filtrado, hoy)), [filtrado, hoy]);
+  const porProducto = useMemo(() => resumenPolloPorProducto(pollo, hoy), [pollo, hoy]);
+  const porMes = useMemo(() => resumenPolloPorMes(filtrado), [filtrado]);
+  const porProveedor = useMemo(() => resumenPolloPorProveedor(filtrado), [filtrado]);
   const proveedores = useMemo(() => [...new Set(pollo.map((x) => x.proveedor?.trim()).filter(Boolean))].sort() as string[], [pollo]);
 
   if (faltaMigracion) {
@@ -61,7 +77,7 @@ export default function PolloSeccion({
 
   function editar(x: IngresoPollo) {
     setEditandoId(x.id);
-    setForm({ fecha: x.fecha, proveedor: x.proveedor ?? "", cajones: String(x.cajones), kg_total: aTexto(x.kg_total), precio_kg: aTexto(x.precio_kg), notas: x.notas ?? "" });
+    setForm({ fecha: x.fecha, proveedor: x.proveedor ?? "", producto: productoDe(x), cajones: String(x.cajones), kg_total: aTexto(x.kg_total), precio_kg: aTexto(x.precio_kg), notas: x.notas ?? "" });
     setError(null);
     setAbierto(true);
     requestAnimationFrame(() => document.getElementById("form-pollo")?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -69,7 +85,7 @@ export default function PolloSeccion({
 
   function cancelar() {
     setEditandoId(null);
-    setForm(vacio());
+    setForm(vacio(filtro ?? "entero"));
     setError(null);
     setAbierto(false);
   }
@@ -86,13 +102,13 @@ export default function PolloSeccion({
 
     setGuardando(true);
     const err = await acciones.guardarPollo(
-      { fecha: form.fecha, proveedor: form.proveedor.trim() || null, cajones, kg_total: kg, precio_kg: precio, notas: form.notas.trim() || null },
+      { fecha: form.fecha, proveedor: form.proveedor.trim() || null, producto: form.producto, cajones, kg_total: kg, precio_kg: precio, notas: form.notas.trim() || null },
       editandoId ?? undefined,
     );
     setGuardando(false);
     if (err) return setError(err);
     // Queda el proveedor y el precio: el próximo ingreso suele ser del mismo.
-    setForm((f) => ({ ...vacio(), fecha: f.fecha, proveedor: f.proveedor, precio_kg: f.precio_kg }));
+    setForm((f) => ({ ...vacio(f.producto), fecha: f.fecha, proveedor: f.proveedor, precio_kg: f.precio_kg }));
     setEditandoId(null);
     setError(null);
   }
@@ -101,6 +117,61 @@ export default function PolloSeccion({
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} role="tablist" aria-label="Producto">
+        {([null, ...PRODUCTOS] as (ProductoPollo | null)[]).map((p) => {
+          const activo = filtro === p;
+          const cantidad = filtrarPollo(pollo, p).length;
+          return (
+            <button
+              key={p ?? "todos"}
+              type="button"
+              role="tab"
+              aria-selected={activo}
+              data-test={`producto-${p ?? "todos"}`}
+              onClick={() => {
+                setFiltro(p);
+                if (!editandoId) setForm((f) => ({ ...f, producto: p ?? f.producto }));
+              }}
+              style={{ ...botonSecundario, padding: "6px 12px", background: activo ? "#FDEDEC" : "white", borderColor: activo ? ROJO : "#ccc", color: activo ? ROJO : "#1A1A2E" }}
+            >
+              {p ? NOMBRE_PRODUCTO_POLLO[p] : "Todos"} ({cantidad})
+            </button>
+          );
+        })}
+      </div>
+
+      {filtro == null && porProducto.length > 1 && (
+        <div style={tarjeta}>
+          <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Últimos 30 días, por producto</h3>
+          <TablaScroll>
+            <table style={{ width: "100%", borderCollapse: "collapse" }} data-test="tabla-pollo-por-producto">
+              <thead>
+                <tr>
+                  <th style={thStyle}>Producto</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Cajones</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Kilos</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Kg/cajón</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>$/kg prom.</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {porProducto.map((g) => (
+                  <tr key={g.producto} data-test="fila-pollo-producto">
+                    <td style={{ ...tdStyle, whiteSpace: "nowrap", fontWeight: 700 }}>{g.clave}</td>
+                    <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700 }}>{g.cajones}</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }}>{num(g.kg, 1)}</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }}>{g.kgPorCajon == null ? "—" : num(g.kgPorCajon, 1)}</td>
+                    <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>{g.precioPromedio == null ? "—" : num(g.precioPromedio)}</td>
+                    <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap", fontWeight: 700 }}>$ {num(g.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TablaScroll>
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 160px), 1fr))", gap: 8 }} data-test="resumen-pollo-30">
         <Secundario r={{ etiqueta: "Cajones (30 días)", valor: mes.cajones, unidad: "", decimales: 0 }} />
         <Secundario r={{ etiqueta: "Kilos (30 días)", valor: mes.kg, unidad: "kg", decimales: 1 }} />
@@ -116,10 +187,19 @@ export default function PolloSeccion({
           </button>
         ) : (
           <div data-test="form-pollo">
-            <h3 style={{ margin: "0 0 8px", fontSize: 15, color: ROJO }}>{editandoId ? "Editar ingreso de pollo" : "Cajones de pollo que entraron"}</h3>
+            <h3 style={{ margin: "0 0 8px", fontSize: 15, color: ROJO }}>{editandoId ? "Editar ingreso de pollo" : "Cajones que entraron"}</h3>
             <div style={grillaForm}>
               <Campo etiqueta="Fecha">
                 <input type="date" value={form.fecha} max={hoy} onChange={set("fecha")} style={inputForm} data-test="p-fecha" />
+              </Campo>
+              <Campo etiqueta="Producto">
+                <select value={form.producto} onChange={(e) => setForm((f) => ({ ...f, producto: e.target.value as ProductoPollo }))} style={inputForm} data-test="p-producto">
+                  {PRODUCTOS.map((p) => (
+                    <option key={p} value={p}>
+                      {NOMBRE_PRODUCTO_POLLO[p]}
+                    </option>
+                  ))}
+                </select>
               </Campo>
               <Campo etiqueta="Proveedor">
                 <input list="proveedores-pollo" value={form.proveedor} onChange={set("proveedor")} style={inputForm} data-test="p-proveedor" placeholder="Avícola…" />
@@ -177,6 +257,7 @@ export default function PolloSeccion({
               <thead>
                 <tr>
                   <th style={thStyle}>Fecha</th>
+                  <th style={thStyle}>Producto</th>
                   <th style={thStyle}>Proveedor</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Cajones</th>
                   <th style={{ ...thStyle, textAlign: "right" }}>Kilos</th>
@@ -190,6 +271,7 @@ export default function PolloSeccion({
                 {ordenados.map((x) => (
                   <tr key={x.id} data-test="fila-pollo">
                     <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>{fechaCorta(x.fecha)}</td>
+                    <td style={{ ...tdStyle, whiteSpace: "nowrap" }} data-test="producto-fila">{NOMBRE_PRODUCTO_POLLO[productoDe(x)]}</td>
                     <td style={tdStyle}>
                       {x.proveedor ?? "—"}
                       {x.notas && <div style={{ fontSize: 10, color: "#888" }}>{x.notas}</div>}
@@ -209,7 +291,7 @@ export default function PolloSeccion({
                         style={iconoBtn}
                         data-test="eliminar-pollo"
                         onClick={() =>
-                          pedirConfirmacion(`¿Eliminar los ${x.cajones} cajones del ${fechaCorta(x.fecha)}${x.proveedor ? ` de ${x.proveedor}` : ""}?`, () => acciones.eliminarPollo(x.id))
+                          pedirConfirmacion(`¿Eliminar los ${x.cajones} cajones de ${NOMBRE_PRODUCTO_POLLO[productoDe(x)].toLowerCase()} del ${fechaCorta(x.fecha)}${x.proveedor ? ` de ${x.proveedor}` : ""}?`, () => acciones.eliminarPollo(x.id))
                         }
                       >
                         <Trash2 size={15} />

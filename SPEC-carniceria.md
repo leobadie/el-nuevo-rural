@@ -106,6 +106,26 @@ Decisiones del usuario: se anotan los cajones que **entran**, y alimentan el mó
     y 6. Se pueden pisar a mano.
 23. Validación: cajones entero mayor que 0, kilos mayor que 0, precio no negativo, fecha no futura.
 
+## Ampliación: productos de pollo y piernas de cerdo (pedido del 26/09/2026)
+
+Decisiones del usuario: todo el pollo llega en cajones; el módulo 7 sigue usando sólo el pollo
+entero; las piernas de cerdo llevan desposte opcional, como la media res.
+
+24. Cada ingreso de pollo tiene un **producto**: pollo entero, pata y muslo, alitas o pechuga.
+    Todos se cargan igual (cajones, kilos totales, precio por kilo). Los ingresos que ya estaban
+    cargados quedan como pollo entero. Migración `supabase/022_carniceria_productos.sql`.
+25. En Pollo se puede filtrar por producto (Todos / cada uno): la lista, el resumen de 30 días, el
+    mes a mes y el por proveedor muestran lo filtrado. Además hay un cuadro de los últimos 30 días
+    por producto (cajones, kilos, kilos por cajón, precio promedio, total).
+26. El módulo 7 toma los kilos por cajón y el precio de compra **sólo de los cajones de pollo
+    entero**: las partes trozadas no se mezclan.
+27. En Cerdo se elige **Media res**, **Piernas**, **Combos** o **Juegos** (combos y juegos
+    pedidos después, el mismo día). Cada uno tiene su formulario, su lista y sus resúmenes. Piernas,
+    combos y juegos se cargan con kilos, precio y, si se despostaron, hueso, cuero y grasa, merma y
+    lo que se recupera por kilo; con eso se ve su rendimiento y el costo real del kilo.
+28. El módulo 6 (media res de cerdo) usa **sólo las medias reses**: piernas, combos y juegos no
+    cambian su promedio. La base impide cargarlos como vaca.
+
 ## Fuera de alcance
 
 - Conectar con la balanza o con el sistema de ventas para traer los kilos vendidos solos

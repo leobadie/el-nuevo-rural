@@ -2,6 +2,11 @@
 
 export type Especie = "vaca" | "cerdo";
 
+/** Qué se compra de la especie: la media res entera o, de cerdo, piernas, combos o juegos sueltos. */
+export type CorteCompra = "media_res" | "pierna" | "combo" | "juego";
+
+export type ProductoPollo = "entero" | "pata_muslo" | "alitas" | "pechuga";
+
 /** Un corte de la pizarra. Lo comparten el escandallo (módulo 3) y el prorrateo (módulo 4). */
 export interface Corte {
   id: string;
@@ -21,6 +26,8 @@ export interface MediaRes {
   fecha: string;
   abastecedor: string | null;
   especie: Especie;
+  /** Sólo el cerdo puede ser algo distinto de media res. Lo cargado antes de la 022 es media res. */
+  corte: CorteCompra;
   kg_factura: number;
   precio_kg: number;
   kg_balanza: number | null;
@@ -52,6 +59,8 @@ export interface IngresoPollo {
   id: string;
   fecha: string;
   proveedor: string | null;
+  /** Lo cargado antes de la migración 022 es pollo entero. */
+  producto: ProductoPollo;
   cajones: number;
   /** Kilos totales de la factura (todos los cajones juntos). */
   kg_total: number;

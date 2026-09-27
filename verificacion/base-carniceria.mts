@@ -104,6 +104,32 @@ async function main() {
   ok(!!e9, "La base rechaza medio cajón", e9?.message ?? "lo aceptó");
   const { error: e10 } = await sb.from("carniceria_pollo").insert({ ...basePollo, kg_total: 0 });
   ok(!!e10, "La base rechaza 0 kilos", e10?.message ?? "lo aceptó");
+
+  console.log("\n=== Productos de pollo y piernas de cerdo (022) ===");
+  const { error: sin022 } = await sb.from("carniceria_pollo").select("producto").limit(1);
+  if (sin022) {
+    ok(false, "Existe la columna producto: falta aplicar supabase/022_carniceria_productos.sql", sin022.message);
+    return;
+  }
+  const { data: viejos } = await sb.from("carniceria_pollo").select("producto").neq("proveedor", MARCA);
+  ok((viejos ?? []).every((x: { producto: string }) => x.producto === "entero"), "Lo cargado antes quedó como pollo entero", (viejos ?? []).length);
+  const { data: pata, error: e11 } = await sb.from("carniceria_pollo").insert({ ...basePollo, producto: "pata_muslo" }).select().single();
+  ok(!e11 && pata?.producto === "pata_muslo", "Se guarda pata y muslo", e11?.message ?? "");
+  const { error: e12 } = await sb.from("carniceria_pollo").insert({ ...basePollo, producto: "higado" });
+  ok(!!e12, "La base rechaza un producto que no existe", e12?.message ?? "lo aceptó");
+  const { data: medViejas } = await sb.from("carniceria_medias_reses").select("corte").neq("abastecedor", MARCA);
+  ok((medViejas ?? []).every((x: { corte: string }) => x.corte === "media_res"), "Lo cargado antes quedó como media res", (medViejas ?? []).length);
+  const { data: pierna, error: e13 } = await sb.from("carniceria_medias_reses")
+    .insert({ ...base, especie: "cerdo", corte: "pierna", kg_factura: 12, precio_kg: 6000 }).select().single();
+  ok(!e13 && pierna?.corte === "pierna", "Se guarda una pierna de cerdo", e13?.message ?? "");
+  const { error: e14 } = await sb.from("carniceria_medias_reses").insert({ ...base, corte: "pierna" });
+  ok(!!e14, "La base rechaza una pierna de vaca", e14?.message ?? "lo aceptó");
+  for (const c of ["combo", "juego"]) {
+    const { error: eOk } = await sb.from("carniceria_medias_reses").insert({ ...base, especie: "cerdo", corte: c, kg_factura: 8, precio_kg: 7000 });
+    ok(!eOk, `Se guarda un ${c} de cerdo`, eOk?.message ?? "");
+  }
+  const { error: e15 } = await sb.from("carniceria_medias_reses").insert({ ...base, corte: "costillar" });
+  ok(!!e15, "La base rechaza un tipo de compra que no existe", e15?.message ?? "lo aceptó");
 }
 
 try {

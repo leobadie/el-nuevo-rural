@@ -12,7 +12,18 @@
  *
  * Este archivo no importa nada del proyecto: el script de verificación lo transpila suelto.
  */
-import type { Corte, Especie, GastoCarniceria, IngresoPollo, MediaRes, Parametros } from "./types";
+import type { Corte, CorteCompra, Especie, GastoCarniceria, IngresoPollo, MediaRes, Parametros, ProductoPollo } from "./types";
+
+export const NOMBRE_PRODUCTO_POLLO: Record<ProductoPollo, string> = {
+  entero: "Pollo entero",
+  pata_muslo: "Pata y muslo",
+  alitas: "Alitas",
+  pechuga: "Pechuga",
+};
+
+/** Lo cargado antes de la migración 022 no trae la columna: es media res y pollo entero. */
+const corteDe = (m: MediaRes): CorteCompra => m.corte ?? "media_res";
+const productoDe = (x: IngresoPollo): ProductoPollo => x.producto ?? "entero";
 
 // ============================================================================
 // Formato
@@ -264,9 +275,9 @@ function enUltimos30(fecha: string, hoy: string): boolean {
   return d >= 0 && d < 30;
 }
 
-/** Las medias reses de los últimos 30 días (hoy incluido) de una especie. */
-export function ultimoMes(medias: MediaRes[], especie: Especie, hoy: string): MediaRes[] {
-  return medias.filter((m) => m.especie === especie && enUltimos30(m.fecha, hoy));
+/** Lo de los últimos 30 días (hoy incluido) de una especie. Por defecto, sólo medias reses. */
+export function ultimoMes(medias: MediaRes[], especie: Especie, hoy: string, corte: CorteCompra = "media_res"): MediaRes[] {
+  return medias.filter((m) => m.especie === especie && corteDe(m) === corte && enUltimos30(m.fecha, hoy));
 }
 
 const promedio = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : NaN);
@@ -353,9 +364,9 @@ export function resumir(clave: string, xs: MediaRes[]): ResumenGrupo {
 }
 
 /** Evolución mes a mes (YYYY-MM), del más reciente al más viejo (SPEC 6). */
-export function resumenPorMes(medias: MediaRes[], especie: Especie): ResumenGrupo[] {
+export function resumenPorMes(medias: MediaRes[], especie: Especie, corte: CorteCompra = "media_res"): ResumenGrupo[] {
   const grupos = new Map<string, MediaRes[]>();
-  for (const m of medias.filter((x) => x.especie === especie)) {
+  for (const m of medias.filter((x) => x.especie === especie && corteDe(x) === corte)) {
     const k = m.fecha.slice(0, 7);
     grupos.set(k, [...(grupos.get(k) ?? []), m]);
   }
@@ -363,9 +374,9 @@ export function resumenPorMes(medias: MediaRes[], especie: Especie): ResumenGrup
 }
 
 /** Resumen por abastecedor, el que más medias reses mandó primero (SPEC 6). */
-export function resumenPorAbastecedor(medias: MediaRes[], especie: Especie): ResumenGrupo[] {
+export function resumenPorAbastecedor(medias: MediaRes[], especie: Especie, corte: CorteCompra = "media_res"): ResumenGrupo[] {
   const grupos = new Map<string, MediaRes[]>();
-  for (const m of medias.filter((x) => x.especie === especie)) {
+  for (const m of medias.filter((x) => x.especie === especie && corteDe(x) === corte)) {
     const k = m.abastecedor?.trim() || "Sin abastecedor";
     grupos.set(k, [...(grupos.get(k) ?? []), m]);
   }
@@ -402,8 +413,20 @@ export function resumirPollo(clave: string, xs: IngresoPollo[]): ResumenPollo {
   };
 }
 
-export function polloUltimoMes(pollo: IngresoPollo[], hoy: string): IngresoPollo[] {
-  return pollo.filter((x) => enUltimos30(x.fecha, hoy));
+/** Los ingresos de pollo de los últimos 30 días; con producto, sólo los de ese producto. */
+export function polloUltimoMes(pollo: IngresoPollo[], hoy: string, producto?: ProductoPollo): IngresoPollo[] {
+  return pollo.filter((x) => enUltimos30(x.fecha, hoy) && (producto == null || productoDe(x) === producto));
+}
+
+/** Últimos 30 días por producto, en el orden de NOMBRE_PRODUCTO_POLLO; sólo los que tienen algo. */
+export function resumenPolloPorProducto(pollo: IngresoPollo[], hoy: string): (ResumenPollo & { producto: ProductoPollo })[] {
+  return (Object.keys(NOMBRE_PRODUCTO_POLLO) as ProductoPollo[])
+    .map((p) => ({ ...resumirPollo(NOMBRE_PRODUCTO_POLLO[p], polloUltimoMes(pollo, hoy, p)), producto: p }))
+    .filter((r) => r.ingresos > 0);
+}
+
+export function filtrarPollo(pollo: IngresoPollo[], producto: ProductoPollo | null): IngresoPollo[] {
+  return producto == null ? pollo : pollo.filter((x) => productoDe(x) === producto);
 }
 
 export function resumenPolloPorMes(pollo: IngresoPollo[]): ResumenPollo[] {
@@ -555,7 +578,8 @@ export function calcularCarniceria(e: EntradaCarniceria): ResultadoCarniceria {
 
   const vaca = promediosHistorial(e.medias, "vaca", e.hoy);
   const cerdo = promediosHistorial(e.medias, "cerdo", e.hoy);
-  const polloMes = resumirPollo("30 días", polloUltimoMes(e.pollo ?? [], e.hoy));
+  // El módulo 7 trata del cajón de pollo entero: las partes compradas trozadas no cuentan (SPEC 26).
+  const polloMes = resumirPollo("30 días", polloUltimoMes(e.pollo ?? [], e.hoy, "entero"));
   const hv = vaca.valores;
   const hc = cerdo.valores;
 
