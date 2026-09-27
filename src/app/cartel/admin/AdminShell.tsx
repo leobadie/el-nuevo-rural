@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type CSSProperties } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import {
   ArrowDown,
@@ -17,6 +18,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useConfirmDialog } from "@/app/useConfirmDialog";
 import PlacaVista from "../PlacaVista";
 import PantallasPanel from "./PantallasPanel";
+import FlyerTab, { type AccionesFlyer } from "./FlyerTab";
+import { puedeIrAlFlyer, siguienteOrdenFlyer, type ConfigFlyer } from "@/lib/ofertas/flyer";
 import {
   NARANJA,
   NAVY,
@@ -53,6 +56,8 @@ type Form = {
   activa: boolean;
   /** Televisores elegidos. Vacío = va a todos los que coincidan por sección. */
   pantallas: string[];
+  /** Va también al flyer (SPEC-ofertas.md). Sólo las ofertas con precio. */
+  en_flyer: boolean;
 };
 
 const FORM_VACIO: Form = {
@@ -71,6 +76,7 @@ const FORM_VACIO: Form = {
   orden: "0",
   activa: true,
   pantallas: [],
+  en_flyer: false,
 };
 
 /** "1.234,50" y "1234.50" tienen que valer lo mismo: acá se carga a mano y rápido. */
@@ -98,8 +104,12 @@ function formDesde(placa: Placa, asignaciones: Asignacion[]): Form {
     duracion_seg: String(placa.duracion_seg),
     orden: String(placa.orden),
     activa: placa.activa,
+    en_flyer: !!placa.en_flyer,
   };
 }
+
+/** Las tres pestañas del módulo unificado (SPEC-ofertas.md, punto 5). */
+export type VistaOfertas = "ofertas" | "televisores" | "flyer";
 
 export default function AdminShell({
   placasIniciales,
@@ -107,14 +117,28 @@ export default function AdminShell({
   asignacionesIniciales,
   userId,
   errorInicial,
+  configFlyerInicial,
+  faltaMigracionFlyer,
+  vistaInicial = "ofertas",
+  endpointFlyer = "/api/flyer",
+  cliente,
 }: {
   placasIniciales: Placa[];
   pantallasIniciales: Pantalla[];
   asignacionesIniciales: Asignacion[];
   userId: string;
   errorInicial: string | null;
+  configFlyerInicial: ConfigFlyer;
+  /** Sin la migración 023 no existen en_flyer ni flyer_config: el TV sigue andando igual. */
+  faltaMigracionFlyer: boolean;
+  vistaInicial?: VistaOfertas;
+  /** A dónde se pide el PNG del flyer. El banco de pruebas usa su propia ruta sin sesión. */
+  endpointFlyer?: string;
+  /** Para el banco de pruebas: una base en memoria en lugar de Supabase. */
+  cliente?: SupabaseClient;
 }) {
-  const supabase = useMemo(() => createClient(), []);
+  const supabase = useMemo(() => cliente ?? createClient(), [cliente]);
+  const [vista, setVista] = useState<VistaOfertas>(vistaInicial);
   const { pedirConfirmacion, ConfirmModal } = useConfirmDialog();
 
   const [placas, setPlacas] = useState<Placa[]>(placasIniciales);
@@ -191,6 +215,8 @@ export default function AdminShell({
       duracion_seg: Number(form.duracion_seg) || 8,
       orden: Number(form.orden) || 0,
       activa: form.activa,
+      // Sin la 023 la columna no existe y mandarla haría fallar el guardado entero.
+      ...(faltaMigracionFlyer ? {} : datosFlyer()),
     };
 
     setGuardando(true);
@@ -231,6 +257,50 @@ export default function AdminShell({
       setGuardando(false);
     }
   }
+
+  /**
+   * en_flyer y, si recién se marca, un orden_flyer al final: así lo nuevo se suma abajo y no
+   * se mete adelante de lo que ya estaba ordenado.
+   */
+  function datosFlyer(): Pick<Placa, "en_flyer"> & { orden_flyer?: number } {
+    const enFlyer = form.en_flyer && puedeIrAlFlyer({ tipo: form.tipo });
+    const antes = editando ? placas.find((p) => p.id === editando) : undefined;
+    if (enFlyer && !antes?.en_flyer) return { en_flyer: true, orden_flyer: siguienteOrdenFlyer(placas) };
+    return { en_flyer: enFlyer };
+  }
+
+  const accionesFlyer: AccionesFlyer = {
+    async alternarEnFlyer(placa, enFlyer) {
+      const cambio = enFlyer ? { en_flyer: true, orden_flyer: siguienteOrdenFlyer(placas) } : { en_flyer: false };
+      const { error: e } = await supabase.from("cartel_placas").update(cambio).eq("id", placa.id);
+      if (e) {
+        setError(`No se pudo cambiar el flyer: ${e.message}`);
+        return;
+      }
+      setPlacas((ps) => ps.map((p) => (p.id === placa.id ? { ...p, ...cambio } : p)));
+    },
+    async reordenar(cambios) {
+      const rs = await Promise.all(cambios.map((c) => supabase.from("cartel_placas").update({ orden_flyer: c.orden_flyer }).eq("id", c.id)));
+      const e = rs.find((r) => r.error)?.error;
+      if (e) {
+        setError(`No se pudo reordenar el flyer: ${e.message}`);
+        return;
+      }
+      setPlacas((ps) => ps.map((p) => ({ ...p, ...(cambios.find((c) => c.id === p.id) ?? {}) })));
+    },
+    async guardarConfig(config) {
+      const { error: e } = await supabase.from("flyer_config").upsert({ id: 1, ...config, actualizado_el: new Date().toISOString() });
+      return e ? `No se pudo guardar el flyer: ${e.message}` : null;
+    },
+    editar(placa) {
+      setVista("ofertas");
+      setEditando(placa.id);
+      setForm(formDesde(placa, asignaciones));
+      setAviso(null);
+      setError(null);
+    },
+    endpoint: endpointFlyer,
+  };
 
   /**
    * Deja la asignación de una placa exactamente en los televisores elegidos.
@@ -342,10 +412,12 @@ export default function AdminShell({
   const enPantalla = ordenadas.filter((p) => estaVigente(p, hoy)).length;
 
   return (
-    <div style={{ background: "#F2F6FC", minHeight: "100vh", padding: 16 }}>
+    // width: 100% y minWidth: 0 porque este div es hijo de un body flex: sin ellos el arte del
+    // flyer (1080 px antes de escalarse) estira el documento entero en el teléfono.
+    <div style={{ background: "#F2F6FC", color: "#1A1A2E", minHeight: "100vh", padding: 16, width: "100%", minWidth: 0, boxSizing: "border-box" }}>
       <ConfirmModal />
 
-      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "minmax(0, 1fr)" }}>
         {/* ---------- Encabezado ---------- */}
         <div
           style={{
@@ -359,7 +431,7 @@ export default function AdminShell({
         >
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 800, color: NAVY, margin: 0 }}>
-              Cartel de los televisores
+              Ofertas: televisores y flyer
             </h1>
             <p style={{ fontSize: 13, color: "#666", margin: "4px 0 0" }}>
               {enPantalla > 0
@@ -381,16 +453,55 @@ export default function AdminShell({
         {error && <Banner tono="error" texto={error} onCerrar={() => setError(null)} />}
         {aviso && <Banner tono="ok" texto={aviso} onCerrar={() => setAviso(null)} />}
 
-        <PantallasPanel
-          pantallasIniciales={pantallasIniciales}
-          userId={userId}
-          onError={setError}
-          onAviso={setAviso}
-        />
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", borderBottom: `2px solid ${NAVY}`, marginBottom: 16 }} role="tablist">
+          {(
+            [
+              ["ofertas", `Ofertas (${placas.length})`],
+              ["televisores", "Televisores"],
+              ["flyer", "Flyer"],
+            ] as const
+          ).map(([id, texto]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={vista === id}
+              onClick={() => setVista(id)}
+              data-test={`tab-${id}`}
+              style={{
+                background: vista === id ? NAVY : "transparent",
+                color: vista === id ? "white" : NAVY,
+                border: "none",
+                borderRadius: "8px 8px 0 0",
+                padding: "9px 16px",
+                fontSize: 14,
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              {texto}
+            </button>
+          ))}
+        </div>
+
+        {/* Montado siempre y escondido: así no se pierde lo que se estaba escribiendo al cambiar de pestaña. */}
+        <div hidden={vista !== "televisores"}>
+          <PantallasPanel
+            pantallasIniciales={pantallasIniciales}
+            userId={userId}
+            onError={setError}
+            onAviso={setAviso}
+            cliente={supabase}
+          />
+        </div>
+
+        {vista === "flyer" && (
+          <FlyerTab placas={placas} configInicial={configFlyerInicial} faltaMigracion={faltaMigracionFlyer} acciones={accionesFlyer} />
+        )}
 
         <div
           style={{
-            display: "grid",
+            // Escondida y no desmontada: el formulario a medio llenar sobrevive al cambio de pestaña.
+            display: vista === "ofertas" ? "grid" : "none",
             // min(360px, 100%) evita que en un celular angosto la columna
             // ensanche el documento entero y deje los botones fuera de la vista.
             gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
@@ -449,6 +560,7 @@ export default function AdminShell({
                         {p.seccion ? `${p.seccion} · ${p.tipo}` : `${p.tipo} · todas las pantallas`}
                         {p.precio != null && ` · ${fmtPrecio(p.precio)}`}
                         {` · ${p.duracion_seg}s`}
+                        {p.en_flyer && puedeIrAlFlyer(p) && " · en el flyer"}
                         {!p.activa && " · apagada"}
                         {p.activa && !vigente && " · fuera de vigencia"}
                       </div>
@@ -716,6 +828,13 @@ export default function AdminShell({
                   <input type="checkbox" checked={form.activa} onChange={(e) => set("activa", e.target.checked)} />
                   Mostrarla en el televisor
                 </label>
+
+                {form.tipo === "oferta" && !faltaMigracionFlyer && (
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#333" }}>
+                    <input type="checkbox" checked={form.en_flyer} onChange={(e) => set("en_flyer", e.target.checked)} data-test="form-en-flyer" />
+                    Va en el flyer
+                  </label>
+                )}
 
                 <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                   <button onClick={guardar} disabled={guardando} style={{ ...botonPrimario, flex: 1, justifyContent: "center" }}>

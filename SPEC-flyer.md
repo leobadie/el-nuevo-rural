@@ -1,5 +1,11 @@
 # SPEC — Flyer de ofertas
 
+> **26/09/2026:** el flyer pasó a ser una pestaña del módulo de ofertas (`SPEC-ofertas.md`). Los
+> productos ya no se cargan acá: salen de las ofertas del televisor marcadas «Va en el flyer», y el
+> encabezado y el pie se guardan en la base. El arte, los formatos y la generación del PNG (R1 y R2)
+> siguen como están descriptos abajo; R3 (la pantalla propia y lo guardado en el navegador) quedó
+> reemplazado.
+
 Una pantalla para armar el flyer de ofertas del local y descargarlo como imagen, lista para
 mandar por WhatsApp, subir como estado o cargar en los televisores. Reusa la identidad visual
 de la cartelería (`SPEC-cartel.md`) para que el flyer y las pantallas del local se vean como

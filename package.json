@@ -29,7 +29,8 @@
     "verificar:base-carniceria": "node verificacion/base-carniceria.mts",
     "verificar:base-municipalidad": "node verificacion/base-municipalidad.mts",
     "verificar:flyer-calculos": "node verificacion/flyer-calculos.mts",
-    "verificar:flyer": "node verificacion/flyer.mjs"
+    "verificar:ofertas-calculos": "node verificacion/ofertas-calculos.mts",
+    "verificar:ofertas": "node verificacion/ofertas.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",

@@ -5,7 +5,7 @@ import type { Flyer, FormatoFlyer } from "@/lib/flyer/tipos";
 
 /*
  * La misma imagen que /api/flyer, pero sin pedir sesión, para que el verificador de navegador
- * pueda comprobar el PNG de verdad (medidas y que Satori no se rompa). Igual que las páginas
+ * pueda comprobar el PNG de verdad (medidas y que Satori no se rompa) con `npm run verificar:ofertas`. Igual que las páginas
  * de preview: vive bajo /login, que es lo que el proxy deja pasar, y **en producción no
  * existe**, así que no abre un generador público.
  *

@@ -233,6 +233,27 @@ try {
       );
     }
   }
+
+  console.log("\n=== Ofertas y flyer en un solo módulo (023, SPEC-ofertas.md) ===");
+  const { error: sin023 } = await admin.from("flyer_config").select("id").limit(1);
+  if (sin023) {
+    ok(false, "Existe flyer_config: falta aplicar supabase/023_ofertas_flyer.sql", sin023.message);
+  } else {
+    // Sobre la placa apagada: una prueba no tiene que aparecer nunca en los televisores.
+    const { data: antes } = await admin.from("cartel_placas").select("en_flyer, orden_flyer").eq("id", idApagada!).single();
+    ok(antes?.en_flyer === false && antes?.orden_flyer === 0, "Una placa nueva no va al flyer (en_flyer = false)", JSON.stringify(antes));
+    const { data: despues, error: eMarca } = await admin
+      .from("cartel_placas").update({ en_flyer: true, orden_flyer: 7 }).eq("id", idApagada!).select("en_flyer, orden_flyer").single();
+    ok(!eMarca && despues?.en_flyer === true && despues?.orden_flyer === 7, "Se marca para el flyer con su orden", eMarca?.message ?? JSON.stringify(despues));
+
+    const { data: configAnon } = await anon.from("flyer_config").select("*");
+    ok((configAnon ?? []).length === 0, "Sin sesión no se lee la configuración del flyer (no es pública, a diferencia de las placas)", `${configAnon?.length ?? 0} fila(s)`);
+    const { error: eConfigAnon } = await anon.from("flyer_config").insert({ id: 1, titulo: MARCA });
+    ok(!!eConfigAnon, "…ni se escribe", eConfigAnon?.message ?? "¡ENTRÓ! revisá las políticas");
+    const { error: eDos } = await admin.from("flyer_config").insert({ id: 2, titulo: MARCA });
+    ok(!!eDos, "flyer_config tiene una sola fila (id = 1)", eDos?.message ?? "aceptó id 2");
+    await admin.from("flyer_config").delete().eq("id", 2);
+  }
 } finally {
   await limpiar();
 }

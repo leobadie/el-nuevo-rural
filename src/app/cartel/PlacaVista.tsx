@@ -24,8 +24,12 @@ export default function PlacaVista({ placa }: { placa: Placa }) {
 function PlacaImagen({ placa }: { placa: Placa }) {
   return (
     <div className="pl-imagen">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={placa.imagen_url ?? ""} alt="" />
+      {/* Sin foto no se dibuja nada: un src vacío hace que el navegador vuelva a pedir la
+          página entera. Pasa en la previa del admin mientras todavía no se subió el cartel. */}
+      {placa.imagen_url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={placa.imagen_url} alt="" />
+      )}
     </div>
   );
 }

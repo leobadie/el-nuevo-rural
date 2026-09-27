@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 import { Check, Copy, Monitor, Pencil, X } from "lucide-react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { NAVY, SECCIONES_SUGERIDAS } from "@/lib/cartel/placas";
 import type { Pantalla } from "@/lib/cartel/types";
@@ -35,13 +36,16 @@ export default function PantallasPanel({
   userId,
   onError,
   onAviso,
+  cliente,
 }: {
   pantallasIniciales: Pantalla[];
   userId: string;
   onError: (m: string | null) => void;
   onAviso: (m: string | null) => void;
+  /** El mismo cliente del admin (en el banco de pruebas, una base en memoria). */
+  cliente?: SupabaseClient;
 }) {
-  const supabase = useMemo(() => createClient(), []);
+  const supabase = useMemo(() => cliente ?? createClient(), [cliente]);
 
   const [pantallas, setPantallas] = useState<Pantalla[]>(pantallasIniciales);
   const [form, setForm] = useState<typeof VACIO>(VACIO);

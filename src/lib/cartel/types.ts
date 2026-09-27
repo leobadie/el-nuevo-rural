@@ -21,6 +21,13 @@ export type Placa = {
   duracion_seg: number;
   orden: number;
   activa: boolean;
+  /**
+   * Va también al flyer (SPEC-ofertas.md). Opcionales porque las placas de ejemplo y las
+   * leídas antes de la migración 023 no los traen: faltar es "no va al flyer".
+   */
+  en_flyer?: boolean;
+  /** Orden dentro del flyer, independiente del de rotación del TV. */
+  orden_flyer?: number;
 };
 
 /** Lo que la pantalla necesita para dibujar; el admin maneja el resto. */
