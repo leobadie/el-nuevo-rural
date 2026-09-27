@@ -30,7 +30,10 @@
     "verificar:base-municipalidad": "node verificacion/base-municipalidad.mts",
     "verificar:flyer-calculos": "node verificacion/flyer-calculos.mts",
     "verificar:ofertas-calculos": "node verificacion/ofertas-calculos.mts",
-    "verificar:ofertas": "node verificacion/ofertas.mjs"
+    "verificar:ofertas": "node verificacion/ofertas.mjs",
+    "verificar:corte": "node verificacion/corte-calculos.mts",
+    "verificar:corte-navegador": "node verificacion/corte.mjs",
+    "verificar:base-corte": "node verificacion/base-corte.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",

@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import { buildSaldoAcumulado } from "@/lib/ingresos-egresos/calculos";
 import { RED } from "@/lib/ingresos-egresos/estilos";
 import { useConfirmDialog } from "../useConfirmDialog";
+import AvisoCorteRegistros from "./AvisoCorteRegistros";
+import type { Guardados } from "@/lib/ingresos-egresos/corte";
 import MovimientosTab from "./tabs/MovimientosTab";
 import VentasXRPTab from "./tabs/VentasXRPTab";
 import GastosFijosTab from "./tabs/GastosFijosTab";
@@ -86,6 +88,8 @@ export default function IngresosEgresosShell({
   entregasIniciales,
   imputacionesIniciales,
   configProveedoresInicial,
+  corteRegistros = null,
+  guardadosAntesDelCorte = { movimientos: 0, ventasXRP: 0, pedidos: 0, entregas: 0 },
 }: {
   esAdmin: boolean;
   userId: string;
@@ -100,6 +104,10 @@ export default function IngresosEgresosShell({
   entregasIniciales: EntregaProveedor[];
   imputacionesIniciales: ImputacionPago[];
   configProveedoresInicial: ConfigProveedores | null;
+  /** Desde cuándo se cuentan los registros (SPEC-corte-registros.md). null = todo. */
+  corteRegistros?: string | null;
+  /** Lo cargado antes del corte, que sigue en la base: se cuenta en el aviso. */
+  guardadosAntesDelCorte?: Guardados;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const { pedirConfirmacion, ConfirmModal } = useConfirmDialog();
@@ -585,6 +593,23 @@ export default function IngresosEgresosShell({
           ← Volver
         </Link>
       </div>
+
+      <AvisoCorteRegistros
+        corte={corteRegistros}
+        guardados={guardadosAntesDelCorte}
+        esAdmin={esAdmin}
+        onCambiar={async (nuevo) => {
+          const { error } = await supabase.from("config_ingresos_egresos").upsert({ id: true, corte: nuevo });
+          if (error) {
+            console.error(error);
+            return "No se pudo cambiar la fecha de corte. Probá de nuevo.";
+          }
+          // Recarga entera: el corte se aplica en el servidor y el estado de acá se armó con lo
+          // de antes. Un refresco parcial dejaría las pestañas mostrando los datos viejos.
+          window.location.reload();
+          return null;
+        }}
+      />
 
       {saveError && (
         <div style={{ background: "#FADBD8", color: "#922B21", padding: "8px 12px", borderRadius: 6, marginBottom: 12, fontSize: 13 }}>

@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { aplicarCorte, corteCuentaCorriente } from "@/lib/ingresos-egresos/corte";
+import { leerCorteIE } from "@/lib/ingresos-egresos/corteServidor";
 import IngresosEgresosShell from "./IngresosEgresosShell";
 import type {
   Categoria,
@@ -59,21 +61,43 @@ export default async function IngresosEgresosPage({
     supabase.from("config_proveedores").select("*").maybeSingle(),
   ]);
 
+  // Corte de registros (SPEC-corte-registros.md): lo cargado antes sigue en la base, pero la
+  // sección arranca de cero. Se aplica acá, una vez, para que todas las pestañas vean lo mismo.
+  const corte = await leerCorteIE(supabase);
+  const { visibles, guardados } = aplicarCorte(
+    {
+      movimientos: (movsRes.data ?? []) as Movimiento[],
+      ventasXRP: (ventasXRPRes.data ?? []) as VentaXRP[],
+      pedidos: (pedidosRes.data ?? []) as Pedido[],
+      entregas: (entregasRes.data ?? []) as EntregaProveedor[],
+      imputaciones: (imputacionesRes.data ?? []) as ImputacionPago[],
+    },
+    corte,
+  );
+  // La cuenta corriente tiene su propio corte (013); manda el más nuevo de los dos.
+  const configProveedores = configProveedoresRes.data as ConfigProveedores | null;
+  const configProveedoresEfectiva: ConfigProveedores | null =
+    configProveedores || corte
+      ? { ...configProveedores, corte_cuenta_corriente: corteCuentaCorriente(configProveedores?.corte_cuenta_corriente, corte) ?? "" }
+      : null;
+
   return (
     <IngresosEgresosShell
       esAdmin={perfil?.rol === "admin"}
       userId={user.id}
       initialTab={tab}
-      movimientosIniciales={(movsRes.data ?? []) as Movimiento[]}
-      ventasXRPIniciales={(ventasXRPRes.data ?? []) as VentaXRP[]}
+      movimientosIniciales={visibles.movimientos}
+      ventasXRPIniciales={visibles.ventasXRP}
       gastosFijosIniciales={(gastosFijosRes.data ?? []) as GastoFijo[]}
       proveedoresIniciales={(proveedoresRes.data ?? []) as Proveedor[]}
       categoriasIniciales={(categoriasRes.data ?? []) as Categoria[]}
       limitesIniciales={(limitesRes.data ?? []) as LimiteCategoria[]}
-      pedidosIniciales={(pedidosRes.data ?? []) as Pedido[]}
-      entregasIniciales={(entregasRes.data ?? []) as EntregaProveedor[]}
-      imputacionesIniciales={(imputacionesRes.data ?? []) as ImputacionPago[]}
-      configProveedoresInicial={(configProveedoresRes.data ?? null) as ConfigProveedores | null}
+      pedidosIniciales={visibles.pedidos}
+      entregasIniciales={visibles.entregas}
+      imputacionesIniciales={visibles.imputaciones}
+      configProveedoresInicial={configProveedoresEfectiva}
+      corteRegistros={corte}
+      guardadosAntesDelCorte={guardados}
     />
   );
 }

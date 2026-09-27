@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { aplicarCorte } from "@/lib/ingresos-egresos/corte";
+import { leerCorteIE } from "@/lib/ingresos-egresos/corteServidor";
 import RentabilidadShell from "./RentabilidadShell";
 import type { Colaborador, ParametrosEmpleados, RegistroAsistencia } from "@/lib/empleados/types";
 import type { Movimiento, VentaXRP } from "@/lib/ingresos-egresos/types";
@@ -48,10 +50,18 @@ export default async function RentabilidadPage() {
     supabase.from("parametros_empleados").select("*").maybeSingle(),
   ]);
 
+  // Mismo corte que Ingresos y Egresos (SPEC-corte-registros.md), para que los números cierren.
+  const corte = await leerCorteIE(supabase);
+  const caja = aplicarCorte(
+    { movimientos: (movsRes.data ?? []) as Movimiento[], ventasXRP: (ventasXRPRes.data ?? []) as VentaXRP[], pedidos: [], entregas: [], imputaciones: [] },
+    corte,
+  ).visibles;
+
   return (
     <RentabilidadShell
-      movimientos={(movsRes.data ?? []) as Movimiento[]}
-      ventasXRP={(ventasXRPRes.data ?? []) as VentaXRP[]}
+      movimientos={caja.movimientos}
+      ventasXRP={caja.ventasXRP}
+      corteRegistros={corte}
       colaboradores={(colaboradoresRes.data ?? []) as Colaborador[]}
       registros={(registrosRes.data ?? []) as RegistroAsistencia[]}
       parametros={(parametrosRes.data as ParametrosEmpleados | null) ?? PARAMETROS_DEFAULT}

@@ -13,6 +13,8 @@ import {
 import { calcularMes } from "@/lib/rentabilidad/calculos";
 import { resumenMunicipalidad } from "@/lib/municipalidad/calculos";
 import { hoyISO } from "@/lib/fechas";
+import { aplicarCorte } from "@/lib/ingresos-egresos/corte";
+import { leerCorteIE } from "@/lib/ingresos-egresos/corteServidor";
 import { logout } from "./login/actions";
 import type { Cheque, LimiteProveedor } from "@/lib/cheques/types";
 import type { LimiteCategoria, Movimiento, VentaXRP } from "@/lib/ingresos-egresos/types";
@@ -71,9 +73,15 @@ export default async function Home() {
   ]);
 
   const cheques = (chequesRes.data ?? []) as Cheque[];
-  const movs = (movsRes.data ?? []) as Movimiento[];
+  // Mismo corte que Ingresos y Egresos: el inicio no puede mostrar otros números que la caja.
+  const corte = await leerCorteIE(supabase);
+  const caja = aplicarCorte(
+    { movimientos: (movsRes.data ?? []) as Movimiento[], ventasXRP: (ventasXRPRes.data ?? []) as VentaXRP[], pedidos: [], entregas: [], imputaciones: [] },
+    corte,
+  ).visibles;
+  const movs = caja.movimientos;
   const colaboradores = (colaboradoresRes.data ?? []) as Colaborador[];
-  const ventasXRP = (ventasXRPRes.data ?? []) as VentaXRP[];
+  const ventasXRP = caja.ventasXRP;
   const registros = (registrosRes.data ?? []) as RegistroAsistencia[];
   const parametros = (parametrosRes.data as ParametrosEmpleados | null) ?? PARAMETROS_DEFAULT;
   const limitesProveedores = Object.fromEntries(

@@ -23,7 +23,10 @@ export default function RentabilidadShell({
   colaboradores,
   registros,
   parametros,
+  corteRegistros = null,
 }: {
+  /** Desde cuándo cuentan los registros de caja (SPEC-corte-registros.md). null = todo. */
+  corteRegistros?: string | null;
   movimientos: Movimiento[];
   ventasXRP: VentaXRP[];
   colaboradores: Colaborador[];
@@ -80,6 +83,13 @@ export default function RentabilidadShell({
           ← Volver
         </Link>
       </div>
+
+      {corteRegistros && (
+        <p style={{ fontSize: 12, color: "#5D4300", background: "#FFF8E1", border: "1px solid #F3D27A", borderRadius: 8, padding: "8px 12px", margin: "0 0 14px" }} data-test="aviso-corte-rentabilidad">
+          Los ingresos y egresos se cuentan desde el <strong>{new Date(corteRegistros).toLocaleDateString("es-AR")}</strong>, como
+          en Ingresos y Egresos. Lo cargado antes sigue guardado.
+        </p>
+      )}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 16, borderBottom: "1px solid #ddd" }}>
         {[
