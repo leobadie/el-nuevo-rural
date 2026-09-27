@@ -61,6 +61,15 @@ const handlers: HandlersCarniceria = {
     await esperar();
     return falla() ? "No se pudo eliminar la media res." : null;
   },
+  async guardarPollo(datos, id) {
+    await esperar();
+    if (falla()) return { error: "No se pudo guardar el pollo. Probá de nuevo." };
+    return { ingreso: { ...datos, id: id ?? nextId(), creado_el: new Date().toISOString() } };
+  },
+  async eliminarPollo() {
+    await esperar();
+    return falla() ? "No se pudo eliminar el ingreso de pollo." : null;
+  },
 };
 
 export default function PreviewCarniceriaCliente() {
@@ -69,7 +78,7 @@ export default function PreviewCarniceriaCliente() {
       <p style={{ background: "#FEF9E7", padding: "6px 10px", borderRadius: 6, fontSize: 12, margin: "0 0 12px" }}>
         Banco de pruebas de la carnicería con datos ficticios (fecha de referencia {d(0)}). Nada se guarda.
       </p>
-      <CarniceriaVista parametrosIniciales={{}} cortesIniciales={CORTES} gastosIniciales={GASTOS} mediasIniciales={MEDIAS} handlers={handlers} />
+      <CarniceriaVista parametrosIniciales={{}} cortesIniciales={CORTES} gastosIniciales={GASTOS} mediasIniciales={MEDIAS} polloInicial={[]} handlers={handlers} />
     </div>
   );
 }

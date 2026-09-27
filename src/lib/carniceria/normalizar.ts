@@ -2,7 +2,7 @@
  * Supabase devuelve las columnas numeric como texto ("10600.00"). Se pasan a number al leer,
  * una sola vez, para que las cuentas no concatenen strings.
  */
-import type { Corte, MediaRes } from "./types";
+import type { Corte, IngresoPollo, MediaRes } from "./types";
 
 const n = (x: number | string | null) => (x == null ? null : Number(x));
 
@@ -18,6 +18,10 @@ export function normalizarMedia(m: MediaRes): MediaRes {
     merma_kg: n(m.merma_kg),
     precio_grasero: n(m.precio_grasero),
   };
+}
+
+export function normalizarPollo(p: IngresoPollo): IngresoPollo {
+  return { ...p, cajones: Number(p.cajones), kg_total: Number(p.kg_total), precio_kg: Number(p.precio_kg) };
 }
 
 export function normalizarCorte(c: Corte): Corte {

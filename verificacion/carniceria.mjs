@@ -268,6 +268,52 @@ async function main() {
 
   await t("especie-cerdo").click();
   check("R5j", "El cerdo tiene su propio historial", (await t("sin-medias").count()) === 1);
+
+  // ---------- R19 a R23: cajones de pollo ----------
+  await t("especie-pollo").click();
+  await t("sin-pollo").waitFor();
+  check("R19a", "Al lado de Vaca y Cerdo está Pollo, vacío al principio", (await t("sin-pollo").count()) === 1 && (await texto("especie-pollo")) === "Pollo (0)");
+  await t("abrir-form-pollo").click();
+  const llenarPollo = async (datos) => {
+    for (const [k, v] of Object.entries(datos)) await t(`p-${k}`).fill(String(v));
+  };
+  await llenarPollo({ proveedor: "Granja Sur", cajones: "2,5", kg_total: 50, precio_kg: 3000 });
+  await t("guardar-pollo").click();
+  await pausa(200);
+  check("R23a", "Los cajones tienen que ser un número entero", (await texto("error-pollo")).includes("entero"), await texto("error-pollo"));
+  await llenarPollo({ cajones: 10, kg_total: 200, precio_kg: "3.000" });
+  check("R20a", "Antes de guardar muestra kilos por cajón y lo que pagás", (await texto("vista-previa-pollo")).includes("20,0 kg por cajón") && (await texto("vista-previa-pollo")).includes("$ 600.000"),
+    await texto("vista-previa-pollo"));
+  await t("guardar-pollo").click();
+  await pausa(300);
+  await llenarPollo({ proveedor: "Avícola Norte", cajones: 5, kg_total: 110, precio_kg: "3.200" });
+  await t("guardar-pollo").click();
+  await pausa(300);
+  check("R19b", "Se guardan los dos ingresos", (await t("fila-pollo").count()) === 2 && (await texto("especie-pollo")) === "Pollo (2)", await t("fila-pollo").count());
+  const kgCajon = await page.locator('[data-test="fila-pollo"]', { hasText: "Avícola Norte" }).locator('[data-test="kg-por-cajon"]').innerText();
+  check("R20b", "Kilos por cajón de cada ingreso (110 / 5 = 22)", kgCajon === "22,0", kgCajon);
+  const res30 = await texto("resumen-pollo-30");
+  check("R21a", "Resumen de 30 días: 15 cajones, 310 kg, 20,7 kg por cajón", res30.includes("15") && res30.includes("310,0 kg") && res30.includes("20,7 kg"), res30);
+  check("R21b", "Mes a mes y por proveedor",
+    (await page.locator('[data-test="tabla-pollo-por-mes"] [data-test="fila-resumen-pollo"]').count()) === 1 &&
+      (await page.locator('[data-test="tabla-pollo-por-proveedor"] [data-test="fila-resumen-pollo"]').count()) === 2);
+  await page.screenshot({ path: path.join(OUT, "carniceria-pollo-desktop.png"), fullPage: true, caret: "initial" });
+  await page.locator('[data-test="fila-pollo"]', { hasText: "Avícola Norte" }).locator('[data-test="eliminar-pollo"]').click();
+  await page.getByRole("button", { name: "Confirmar" }).click();
+  await pausa(300);
+  check("R19c", "Se puede eliminar un ingreso", (await t("fila-pollo").count()) === 1);
+  // El formulario queda abierto después de guardar: se carga el siguiente directo.
+  await llenarPollo({ proveedor: "Avícola Norte", cajones: 5, kg_total: 110, precio_kg: "3.200" });
+  await t("guardar-pollo").click();
+  await pausa(300);
+
+  await t("tab-calculadoras").click();
+  await abrir(7);
+  check("R22a", "El módulo 7 toma los kilos por cajón del historial (310 / 15)", (await origen("m7.kg")) === "auto" && (await t("input-m7.kg").inputValue()) === "20,667",
+    `${await origen("m7.kg")} ${await t("input-m7.kg").inputValue()}`);
+  check("R22b", "…y el precio de compra ponderado: 952.000 / 310 = 3.070,968", (await t("input-m7.compra").inputValue()) === "3.070,968", await t("input-m7.compra").inputValue());
+  check("R22c", "Con 20,667 kg por cajón, trozar deja 173 × 20,667 = $ 3.575 más", (await principal()) === "$ 3.575", await principal());
+  await t("tab-medias").click();
   await t("especie-vaca").click();
 
   // ---------- R9: los módulos 1 y 2 toman el historial ----------
@@ -318,6 +364,13 @@ async function main() {
   await pausa(300, mobile);
   check("R15d", "Con una media res cargada, la lista y los resúmenes no desbordan", (await t("fila-media", mobile).count()) === 1 && (await desborde(mobile)) <= 1, `${await desborde(mobile)}px`);
   await mobile.screenshot({ path: path.join(OUT, "carniceria-medias-movil.png"), fullPage: true, caret: "initial" });
+  await t("especie-pollo", mobile).click();
+  await t("abrir-form-pollo", mobile).click();
+  for (const [k, v] of Object.entries({ proveedor: "Granja Sur", cajones: 10, kg_total: 200, precio_kg: 3000 })) await t(`p-${k}`, mobile).fill(String(v));
+  await t("guardar-pollo", mobile).click();
+  await pausa(300, mobile);
+  check("R15e", "El pollo (formulario, lista y resúmenes) entra en el teléfono", (await t("fila-pollo", mobile).count()) === 1 && (await desborde(mobile)) <= 1, `${await desborde(mobile)}px`);
+  await mobile.screenshot({ path: path.join(OUT, "carniceria-pollo-movil.png"), fullPage: true, caret: "initial" });
 
   check("R16", "Sin errores de JavaScript en consola", errores.length === 0, process.env.VERBOSE ? errores.join(" | ") : errores.join(" | ").slice(0, 400));
 

@@ -4,25 +4,29 @@ import { useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { normalizarCorte, normalizarMedia } from "@/lib/carniceria/normalizar";
-import type { Corte, GastoCarniceria, MediaRes, Parametros } from "@/lib/carniceria/types";
+import { normalizarCorte, normalizarMedia, normalizarPollo } from "@/lib/carniceria/normalizar";
+import type { Corte, GastoCarniceria, IngresoPollo, MediaRes, Parametros } from "@/lib/carniceria/types";
 import CarniceriaVista, { type HandlersCarniceria } from "./CarniceriaVista";
 import { ROJO } from "./ui";
 
 export default function CarniceriaShell({
   userId,
   faltaMigracion,
+  faltaMigracionPollo,
   parametros,
   cortes,
   gastos,
   medias,
+  pollo,
 }: {
   userId: string;
   faltaMigracion: boolean;
+  faltaMigracionPollo: boolean;
   parametros: Parametros;
   cortes: Corte[];
   gastos: GastoCarniceria[];
   medias: MediaRes[];
+  pollo: IngresoPollo[];
 }) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -79,6 +83,24 @@ export default function CarniceriaShell({
       if (error || !data?.length) return "No se pudo eliminar la media res.";
       return null;
     },
+
+    async guardarPollo(datos, id) {
+      const consulta = id
+        ? supabase.from("carniceria_pollo").update(datos).eq("id", id)
+        : supabase.from("carniceria_pollo").insert({ ...datos, creado_por: userId });
+      const { data, error } = await consulta.select().single();
+      if (error || !data) {
+        console.error(error);
+        return { error: "No se pudo guardar el pollo. Probá de nuevo." };
+      }
+      return { ingreso: normalizarPollo(data as IngresoPollo) };
+    },
+
+    async eliminarPollo(id) {
+      const { data, error } = await supabase.from("carniceria_pollo").delete().eq("id", id).select("id");
+      if (error || !data?.length) return "No se pudo eliminar el ingreso de pollo.";
+      return null;
+    },
   };
 
   return (
@@ -109,6 +131,8 @@ export default function CarniceriaShell({
           cortesIniciales={cortes}
           gastosIniciales={gastos}
           mediasIniciales={medias}
+          polloInicial={pollo}
+          faltaMigracionPollo={faltaMigracionPollo}
           handlers={handlers}
         />
       )}

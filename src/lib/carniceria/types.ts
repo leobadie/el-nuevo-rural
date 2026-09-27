@@ -46,3 +46,18 @@ export interface GastoCarniceria {
 
 /** Valores cargados a mano, por clave ("m1.hueso", "gen.dias_mes"...). */
 export type Parametros = Record<string, number>;
+
+/** Cada ingreso de cajones de pollo. Alimenta el módulo 7. */
+export interface IngresoPollo {
+  id: string;
+  fecha: string;
+  proveedor: string | null;
+  cajones: number;
+  /** Kilos totales de la factura (todos los cajones juntos). */
+  kg_total: number;
+  precio_kg: number;
+  notas: string | null;
+  creado_el?: string;
+}
+
+export type NuevoIngresoPollo = Omit<IngresoPollo, "id" | "creado_el">;

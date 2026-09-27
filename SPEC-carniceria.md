@@ -91,6 +91,21 @@ Decisiones del usuario (26/09/2026):
     escritorio.
 18. `npm run build` sin errores.
 
+## Ampliación: cajones de pollo (pedido del 26/09/2026)
+
+Decisiones del usuario: se anotan los cajones que **entran**, y alimentan el módulo 7.
+
+19. En la pestaña de medias reses, al lado de Vaca y Cerdo, hay **Pollo**. Cada ingreso guarda
+    fecha, proveedor, cantidad de cajones, kilos totales de la factura, precio por kilo con IVA y
+    notas. Migración nueva `supabase/021_carniceria_pollo.sql`, solo admin.
+20. Por cada ingreso se ve: kilos por cajón, total pagado y precio por kilo.
+21. Resumen de los últimos 30 días (cajones, kilos, kilos por cajón, precio promedio ponderado por
+    kilos, total pagado), mes a mes y por proveedor.
+22. El módulo 7 toma del historial de los últimos 30 días los **kilos por cajón** (kilos totales /
+    cajones) y el **precio de compra** (ponderado por kilos), como vaca y cerdo en los módulos 1, 2
+    y 6. Se pueden pisar a mano.
+23. Validación: cajones entero mayor que 0, kilos mayor que 0, precio no negativo, fecha no futura.
+
 ## Fuera de alcance
 
 - Conectar con la balanza o con el sistema de ventas para traer los kilos vendidos solos

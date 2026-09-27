@@ -12,7 +12,7 @@
  *
  * Este archivo no importa nada del proyecto: el script de verificación lo transpila suelto.
  */
-import type { Corte, Especie, GastoCarniceria, MediaRes, Parametros } from "./types";
+import type { Corte, Especie, GastoCarniceria, IngresoPollo, MediaRes, Parametros } from "./types";
 
 // ============================================================================
 // Formato
@@ -107,8 +107,8 @@ export const CAMPOS: Record<string, DefCampo> = {
   "m6.merma": { etiqueta: "Recorte y merma", unidad: "kg", ejemplo: 0.9, fuente: "historial de cerdo (últimos 30 días)" },
   "m6.recupero": { etiqueta: "Lo que recuperás por kilo de grasa y cuero", unidad: "$/kg", ejemplo: 500, fuente: "historial de cerdo (últimos 30 días)" },
 
-  "m7.kg": { etiqueta: "Kilos del cajón de pollo", unidad: "kg", ejemplo: 20 },
-  "m7.compra": { etiqueta: "Precio de compra por kilo (con IVA)", unidad: "$/kg", ejemplo: 3000 },
+  "m7.kg": { etiqueta: "Kilos del cajón de pollo", unidad: "kg", ejemplo: 20, fuente: "historial de pollo (últimos 30 días)" },
+  "m7.compra": { etiqueta: "Precio de compra por kilo (con IVA)", unidad: "$/kg", ejemplo: 3000, fuente: "historial de pollo (últimos 30 días)" },
   "m7.venta_entero": { etiqueta: "Precio de venta del pollo entero", unidad: "$/kg", ejemplo: 4900 },
   "m7.pechuga_rinde": { etiqueta: "Pechuga con hueso: rinde", unidad: "%", ejemplo: 30 },
   "m7.pechuga_precio": { etiqueta: "Pechuga con hueso: precio", unidad: "$/kg", ejemplo: 9900 },
@@ -258,9 +258,15 @@ function diasEntre(desde: string, hasta: string): number {
   return Math.round((b - a) / 86400000);
 }
 
+/** Si una fecha cae en los últimos 30 días, hoy incluido. Lo futuro no cuenta. */
+function enUltimos30(fecha: string, hoy: string): boolean {
+  const d = diasEntre(fecha, hoy);
+  return d >= 0 && d < 30;
+}
+
 /** Las medias reses de los últimos 30 días (hoy incluido) de una especie. */
 export function ultimoMes(medias: MediaRes[], especie: Especie, hoy: string): MediaRes[] {
-  return medias.filter((m) => m.especie === especie && diasEntre(m.fecha, hoy) >= 0 && diasEntre(m.fecha, hoy) < 30);
+  return medias.filter((m) => m.especie === especie && enUltimos30(m.fecha, hoy));
 }
 
 const promedio = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : NaN);
@@ -367,6 +373,55 @@ export function resumenPorAbastecedor(medias: MediaRes[], especie: Especie): Res
 }
 
 // ============================================================================
+// Cajones de pollo (SPEC 19 a 23)
+// ============================================================================
+
+export interface ResumenPollo {
+  clave: string;
+  ingresos: number;
+  cajones: number;
+  kg: number;
+  kgPorCajon: number | null;
+  /** Ponderado por kilos: un ingreso grande pesa más en lo que pagaste. */
+  precioPromedio: number | null;
+  total: number;
+}
+
+export function resumirPollo(clave: string, xs: IngresoPollo[]): ResumenPollo {
+  const cajones = xs.reduce((s, x) => s + Number(x.cajones), 0);
+  const kg = xs.reduce((s, x) => s + Number(x.kg_total), 0);
+  const total = xs.reduce((s, x) => s + Number(x.kg_total) * Number(x.precio_kg), 0);
+  return {
+    clave,
+    ingresos: xs.length,
+    cajones,
+    kg,
+    kgPorCajon: cajones > 0 ? kg / cajones : null,
+    precioPromedio: kg > 0 ? total / kg : null,
+    total,
+  };
+}
+
+export function polloUltimoMes(pollo: IngresoPollo[], hoy: string): IngresoPollo[] {
+  return pollo.filter((x) => enUltimos30(x.fecha, hoy));
+}
+
+export function resumenPolloPorMes(pollo: IngresoPollo[]): ResumenPollo[] {
+  const grupos = new Map<string, IngresoPollo[]>();
+  for (const x of pollo) grupos.set(x.fecha.slice(0, 7), [...(grupos.get(x.fecha.slice(0, 7)) ?? []), x]);
+  return [...grupos.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([k, xs]) => resumirPollo(k, xs));
+}
+
+export function resumenPolloPorProveedor(pollo: IngresoPollo[]): ResumenPollo[] {
+  const grupos = new Map<string, IngresoPollo[]>();
+  for (const x of pollo) {
+    const k = x.proveedor?.trim() || "Sin proveedor";
+    grupos.set(k, [...(grupos.get(k) ?? []), x]);
+  }
+  return [...grupos.entries()].map(([k, xs]) => resumirPollo(k, xs)).sort((a, b) => b.cajones - a.cajones || a.clave.localeCompare(b.clave));
+}
+
+// ============================================================================
 // Los 16 módulos
 // ============================================================================
 
@@ -439,6 +494,8 @@ export interface EntradaCarniceria {
   cortes: Corte[];
   gastos: GastoCarniceria[];
   medias: MediaRes[];
+  /** Cajones de pollo que entraron. Opcional: sin historial el módulo 7 usa lo cargado. */
+  pollo?: IngresoPollo[];
   hoy: string;
 }
 
@@ -451,7 +508,7 @@ export interface ResultadoCarniceria {
   gastos: FilaGasto[];
   /** La luz podría estar contada dos veces en el módulo 10 (SPEC 11). */
   avisoLuzDoble: string | null;
-  historial: { vaca: number; cerdo: number };
+  historial: { vaca: number; cerdo: number; pollo: number };
 }
 
 /** El IFERROR(…, 0) del Excel: una cuenta que divide por cero da 0, no NaN. */
@@ -498,6 +555,7 @@ export function calcularCarniceria(e: EntradaCarniceria): ResultadoCarniceria {
 
   const vaca = promediosHistorial(e.medias, "vaca", e.hoy);
   const cerdo = promediosHistorial(e.medias, "cerdo", e.hoy);
+  const polloMes = resumirPollo("30 días", polloUltimoMes(e.pollo ?? [], e.hoy));
   const hv = vaca.valores;
   const hc = cerdo.valores;
 
@@ -713,8 +771,8 @@ export function calcularCarniceria(e: EntradaCarniceria): ResultadoCarniceria {
   });
 
   // ---------- 7. Pollo entero o trozado ----------
-  const m7kg = v("m7.kg");
-  const m7compra = v("m7.compra");
+  const m7kg = v("m7.kg", polloMes.kgPorCajon);
+  const m7compra = v("m7.compra", polloMes.precioPromedio);
   const m7entero = v("m7.venta_entero");
   const partes: [string, string][] = [
     ["Pechuga con hueso", "pechuga"],
@@ -1027,7 +1085,7 @@ export function calcularCarniceria(e: EntradaCarniceria): ResultadoCarniceria {
     pollo,
     gastos,
     avisoLuzDoble,
-    historial: { vaca: vaca.cantidad, cerdo: cerdo.cantidad },
+    historial: { vaca: vaca.cantidad, cerdo: cerdo.cantidad, pollo: polloMes.ingresos },
   };
 }
 

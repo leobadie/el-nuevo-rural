@@ -88,6 +88,22 @@ async function main() {
   await sb.from("gastos_fijos").delete().eq("id", gasto?.id);
   const { data: huerfano } = await sb.from("carniceria_gastos_fijos").select("gasto_fijo_id").eq("gasto_fijo_id", gasto?.id);
   ok((huerfano?.length ?? 1) === 0, "Borrar el gasto fijo en Ingresos y Egresos borra su marca en la carnicería");
+
+  console.log("\n=== Cajones de pollo (021) ===");
+  const { error: sinPollo } = await sb.from("carniceria_pollo").select("*").limit(1);
+  if (sinPollo) {
+    ok(false, "Existe carniceria_pollo: falta aplicar supabase/021_carniceria_pollo.sql", sinPollo.message);
+    return;
+  }
+  const basePollo = { fecha: "2026-09-26", proveedor: MARCA, cajones: 10, kg_total: 200, precio_kg: 3000 };
+  const { data: ing, error: e7 } = await sb.from("carniceria_pollo").insert(basePollo).select().single();
+  ok(!e7 && Number(ing?.kg_total) === 200 && Number(ing?.cajones) === 10, "Se guarda un ingreso de pollo y vuelve igual", e7?.message ?? "");
+  const { error: e8 } = await sb.from("carniceria_pollo").insert({ ...basePollo, cajones: 0 });
+  ok(!!e8, "La base rechaza 0 cajones", e8?.message ?? "lo aceptó");
+  const { error: e9 } = await sb.from("carniceria_pollo").insert({ ...basePollo, cajones: 2.5 });
+  ok(!!e9, "La base rechaza medio cajón", e9?.message ?? "lo aceptó");
+  const { error: e10 } = await sb.from("carniceria_pollo").insert({ ...basePollo, kg_total: 0 });
+  ok(!!e10, "La base rechaza 0 kilos", e10?.message ?? "lo aceptó");
 }
 
 try {
@@ -96,6 +112,7 @@ try {
   await sb.from("carniceria_parametros").delete().eq("clave", CLAVE);
   await sb.from("carniceria_medias_reses").delete().eq("abastecedor", MARCA);
   await sb.from("gastos_fijos").delete().eq("descripcion", MARCA);
+  await sb.from("carniceria_pollo").delete().eq("proveedor", MARCA);
 }
 console.log(`\n${fallos === 0 ? "TODO OK" : `${fallos} FALLA(S)`}`);
 process.exit(fallos === 0 ? 0 : 1);

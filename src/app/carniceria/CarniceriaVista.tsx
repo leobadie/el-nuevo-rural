@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { calcularCarniceria } from "@/lib/carniceria/calculos";
 import { hoyISO } from "@/lib/fechas";
-import type { Corte, GastoCarniceria, MediaRes, NuevaMediaRes, Parametros } from "@/lib/carniceria/types";
+import type { Corte, GastoCarniceria, IngresoPollo, MediaRes, NuevoIngresoPollo, NuevaMediaRes, Parametros } from "@/lib/carniceria/types";
 import { useConfirmDialog } from "../useConfirmDialog";
 import CalculadorasTab from "./CalculadorasTab";
 import MediasResesTab from "./MediasResesTab";
@@ -19,25 +19,42 @@ export interface HandlersCarniceria {
   guardarGasto(gastoFijoId: string, incluido: boolean): Promise<string | null>;
   guardarMedia(datos: NuevaMediaRes, id?: string): Promise<{ error: string } | { media: MediaRes }>;
   eliminarMedia(id: string): Promise<string | null>;
+  guardarPollo(datos: NuevoIngresoPollo, id?: string): Promise<{ error: string } | { ingreso: IngresoPollo }>;
+  eliminarPollo(id: string): Promise<string | null>;
 }
 
 function cantidadMedias(n: number, especie: string): string {
   return n === 1 ? `la media res ${especie}` : `el promedio de las ${n} medias reses ${especie}`;
 }
 
-type Estado ={ tipo: "guardando" } | { tipo: "ok" } | { tipo: "error"; mensaje: string } | null;
+/** "Los módulos 1 y 2 toman la media res de vaca y el módulo 7 toma los 3 ingresos de pollo de los últimos 30 días." */
+function fraseHistorial(h: { vaca: number; cerdo: number; pollo: number }): string {
+  const partes = [
+    h.vaca > 0 && `los módulos 1 y 2 toman ${cantidadMedias(h.vaca, "de vaca")}`,
+    h.cerdo > 0 && `el módulo 6 toma ${cantidadMedias(h.cerdo, "de cerdo")}`,
+    h.pollo > 0 && `el módulo 7 toma ${h.pollo === 1 ? "el ingreso de pollo" : `los ${h.pollo} ingresos de pollo`}`,
+  ].filter((x): x is string => !!x);
+  const lista = partes.length > 1 ? `${partes.slice(0, -1).join(", ")} y ${partes[partes.length - 1]}` : (partes[0] ?? "");
+  return `${lista.charAt(0).toUpperCase()}${lista.slice(1)} de los últimos 30 días.`;
+}
+
+type Estado = { tipo: "guardando" } | { tipo: "ok" } | { tipo: "error"; mensaje: string } | null;
 
 export default function CarniceriaVista({
   parametrosIniciales,
   cortesIniciales,
   gastosIniciales,
   mediasIniciales,
+  polloInicial,
+  faltaMigracionPollo = false,
   handlers,
 }: {
   parametrosIniciales: Parametros;
   cortesIniciales: Corte[];
   gastosIniciales: GastoCarniceria[];
   mediasIniciales: MediaRes[];
+  polloInicial: IngresoPollo[];
+  faltaMigracionPollo?: boolean;
   handlers: HandlersCarniceria;
 }) {
   const [tab, setTab] = useState<"calculadoras" | "medias">("calculadoras");
@@ -45,13 +62,14 @@ export default function CarniceriaVista({
   const [cortes, setCortes] = useState(cortesIniciales);
   const [gastos, setGastos] = useState(gastosIniciales);
   const [medias, setMedias] = useState(mediasIniciales);
+  const [pollo, setPollo] = useState(polloInicial);
   const [estado, setEstado] = useState<Estado>(null);
   const { pedirConfirmacion, ConfirmModal } = useConfirmDialog();
   const pendientes = useRef(0);
 
   const res = useMemo(
-    () => calcularCarniceria({ parametros, cortes, gastos, medias, hoy: hoyISO() }),
-    [parametros, cortes, gastos, medias],
+    () => calcularCarniceria({ parametros, cortes, gastos, medias, pollo, hoy: hoyISO() }),
+    [parametros, cortes, gastos, medias, pollo],
   );
 
   /** Envuelve un guardado: muestra "Guardando…" y, si falla, deshace el cambio optimista. */
@@ -136,13 +154,36 @@ export default function CarniceriaVista({
     },
   };
 
+  const accionesPollo = {
+    async guardarPollo(datos: NuevoIngresoPollo, id?: string): Promise<string | null> {
+      setEstado({ tipo: "guardando" });
+      const r = await handlers.guardarPollo(datos, id);
+      if ("error" in r) {
+        setEstado({ tipo: "error", mensaje: r.error });
+        return r.error;
+      }
+      setPollo((ps) => (id ? ps.map((p) => (p.id === id ? r.ingreso : p)) : [...ps, r.ingreso]));
+      setEstado({ tipo: "ok" });
+      return null;
+    },
+
+    eliminarPollo(id: string) {
+      const borrado = pollo.find((p) => p.id === id);
+      setPollo((ps) => ps.filter((p) => p.id !== id));
+      void guardar(
+        () => handlers.eliminarPollo(id),
+        () => borrado && setPollo((ps) => [...ps, borrado]),
+      );
+    },
+  };
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }}>
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", borderBottom: `2px solid ${ROJO}` }} role="tablist">
         {(
           [
             ["calculadoras", "Calculadoras"],
-            ["medias", `Medias reses (${medias.length})`],
+            ["medias", `Medias reses y pollo (${medias.length + pollo.length})`],
           ] as const
         ).map(([id, texto]) => (
           <button
@@ -183,22 +224,22 @@ export default function CarniceriaVista({
 
       {tab === "calculadoras" ? (
         <>
-          {(res.historial.vaca > 0 || res.historial.cerdo > 0) && (
+          {(res.historial.vaca > 0 || res.historial.cerdo > 0 || res.historial.pollo > 0) && (
             <p style={{ margin: 0, fontSize: 12, color: "#555" }} data-test="aviso-historial">
-              {[
-                res.historial.vaca > 0 && `Los módulos 1 y 2 toman ${cantidadMedias(res.historial.vaca, "de vaca")}`,
-                res.historial.cerdo > 0 && `el módulo 6 ${cantidadMedias(res.historial.cerdo, "de cerdo")}`,
-              ]
-                .filter(Boolean)
-                .join(" y ")
-                .replace(/^el/, "El")}{" "}
-              de los últimos 30 días.
+              {fraseHistorial(res.historial)}
             </p>
           )}
           <CalculadorasTab res={res} parametros={parametros} cortes={cortes} acciones={acciones} />
         </>
       ) : (
-        <MediasResesTab medias={medias} acciones={accionesMedias} pedirConfirmacion={pedirConfirmacion} />
+        <MediasResesTab
+          medias={medias}
+          pollo={pollo}
+          acciones={accionesMedias}
+          accionesPollo={accionesPollo}
+          pedirConfirmacion={pedirConfirmacion}
+          faltaMigracionPollo={faltaMigracionPollo}
+        />
       )}
       <ConfirmModal />
     </div>

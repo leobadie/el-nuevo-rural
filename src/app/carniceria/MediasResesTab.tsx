@@ -12,7 +12,8 @@ import {
   type ResumenGrupo,
 } from "@/lib/carniceria/calculos";
 import { hoyISO } from "@/lib/fechas";
-import type { Especie, MediaRes, NuevaMediaRes } from "@/lib/carniceria/types";
+import type { Especie, IngresoPollo, MediaRes, NuevaMediaRes } from "@/lib/carniceria/types";
+import PolloSeccion, { type AccionesPollo } from "./PolloSeccion";
 import { ROJO, Secundario, TablaScroll, botonPrimario, botonSecundario, num, tarjeta, tdStyle, thStyle } from "./ui";
 
 export interface AccionesMedias {
@@ -50,14 +51,23 @@ const nombreMes = (ym: string) => `${MESES[+ym.slice(5, 7) - 1]} ${ym.slice(0, 4
 
 export default function MediasResesTab({
   medias,
+  pollo,
   acciones,
+  accionesPollo,
   pedirConfirmacion,
+  faltaMigracionPollo,
 }: {
   medias: MediaRes[];
+  pollo: IngresoPollo[];
   acciones: AccionesMedias;
+  accionesPollo: AccionesPollo;
   pedirConfirmacion: (mensaje: string, onConfirm: () => void) => void;
+  faltaMigracionPollo: boolean;
 }) {
-  const [especie, setEspecie] = useState<Especie>("vaca");
+  // Vaca y cerdo son medias reses; el pollo tiene su propia sección (cajones, no desposte).
+  const [seleccion, setSeleccion] = useState<Especie | "pollo">("vaca");
+  const especie: Especie = seleccion === "pollo" ? "vaca" : seleccion;
+  const setEspecie = (e: Especie) => setSeleccion(e);
   const [form, setForm] = useState<Formulario>(vacio);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -176,26 +186,43 @@ export default function MediasResesTab({
     setError(null);
   }
 
+  const selector = (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} role="tablist" aria-label="Especie">
+      {(["vaca", "cerdo", "pollo"] as const).map((e) => {
+        const cantidad = e === "pollo" ? pollo.length : medias.filter((m) => m.especie === e).length;
+        const activo = seleccion === e;
+        return (
+          <button
+            key={e}
+            type="button"
+            role="tab"
+            aria-selected={activo}
+            data-test={`especie-${e}`}
+            onClick={() => setSeleccion(e)}
+            style={{ ...botonSecundario, background: activo ? ROJO : "white", color: activo ? "white" : "#1A1A2E", borderColor: activo ? ROJO : "#ccc", padding: "8px 16px", fontSize: 13 }}
+          >
+            {e === "vaca" ? "Vaca" : e === "cerdo" ? "Cerdo" : "Pollo"} ({cantidad})
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  if (seleccion === "pollo") {
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }}>
+        {selector}
+        <PolloSeccion pollo={pollo} acciones={accionesPollo} pedirConfirmacion={pedirConfirmacion} faltaMigracion={faltaMigracionPollo} />
+      </div>
+    );
+  }
+
   const vista = previsualizar(form, especie);
   const etiquetaGrasa = especie === "vaca" ? "Grasa y sebo" : "Cuero, grasa y tocino";
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }}>
-      <div style={{ display: "flex", gap: 6 }} role="tablist" aria-label="Especie">
-        {(["vaca", "cerdo"] as Especie[]).map((e) => (
-          <button
-            key={e}
-            type="button"
-            role="tab"
-            aria-selected={especie === e}
-            data-test={`especie-${e}`}
-            onClick={() => setEspecie(e)}
-            style={{ ...botonSecundario, background: especie === e ? ROJO : "white", color: especie === e ? "white" : "#1A1A2E", borderColor: especie === e ? ROJO : "#ccc", padding: "8px 16px", fontSize: 13 }}
-          >
-            {e === "vaca" ? "Vaca" : "Cerdo"} ({medias.filter((m) => m.especie === e).length})
-          </button>
-        ))}
-      </div>
+      {selector}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 160px), 1fr))", gap: 8 }} data-test="resumen-30">
         <Secundario r={{ etiqueta: "Medias reses (30 días)", valor: ultimos30.length, unidad: "", decimales: 0 }} />

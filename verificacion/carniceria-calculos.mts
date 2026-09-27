@@ -25,7 +25,11 @@ const {
   calcularMediaRes,
   fix,
   parseNumero,
+  polloUltimoMes,
   promediosHistorial,
+  resumenPolloPorMes,
+  resumenPolloPorProveedor,
+  resumirPollo,
   resumenPorAbastecedor,
   resumenPorMes,
   ultimoMes,
@@ -249,6 +253,41 @@ ok(sep.cantidad === 3 && sep.conDesposte === 2, "Septiembre: 3 medias, 2 despost
 ok(cerca(sep.romanaPct ?? NaN, (2 + 1) / (120 + 110) * 100, 1e-9), "Romana % sobre las que se pesaron", sep.romanaPct);
 const porAb = resumenPorAbastecedor(historial, "vaca");
 ok(porAb[0].clave === "Frigorífico Río" && porAb[0].cantidad === 3 && porAb[1].clave === "Don Pedro", "Resumen por abastecedor, el que más mandó primero", porAb.map((x) => `${x.clave}:${x.cantidad}`));
+
+// ============================================================================
+console.log("\n=== Cajones de pollo (SPEC 19 a 23) ===");
+type Ingreso = NonNullable<Entrada["pollo"]>[number];
+let np = 0;
+const ingreso = (fecha: string, cajones: number, kg_total: number, precio_kg: number, proveedor: string | null = "Granja Sur"): Ingreso =>
+  ({ id: `p${++np}`, fecha, proveedor, cajones, kg_total, precio_kg, notas: null });
+const pollo = [
+  ingreso("2026-09-25", 10, 200, 3000),
+  ingreso("2026-09-10", 5, 110, 3200, "Avícola Norte"),
+  ingreso("2026-08-27", 20, 400, 2500), // hace 30 días: fuera del mes
+  ingreso("2026-09-27", 3, 60, 9999), // mañana: fuera
+];
+const ult = polloUltimoMes(pollo, HOY);
+ok(ult.length === 2, "Últimos 30 días: el de ayer y el del 10", ult.map((x) => x.fecha));
+const rp = resumirPollo("mes", ult);
+ok(rp.cajones === 15 && rp.kg === 310, "Suma cajones y kilos", rp);
+ok(cerca(rp.kgPorCajon ?? NaN, 310 / 15, 1e-9), "Kilos por cajón = kilos totales / cajones (no el promedio de promedios)", rp.kgPorCajon);
+ok(cerca(rp.precioPromedio ?? NaN, (200 * 3000 + 110 * 3200) / 310, 1e-9), "Precio ponderado por kilos", rp.precioPromedio);
+ok(rp.total === 200 * 3000 + 110 * 3200, "Total pagado", rp.total);
+const vacio = resumirPollo("nada", []);
+ok(vacio.kgPorCajon === null && vacio.precioPromedio === null, "Sin ingresos no inventa promedios");
+
+const conPollo = calcular({ ...ajustesM10 }, { pollo });
+ok(campo(conPollo, "m7.kg").origen === "auto" && cerca(campo(conPollo, "m7.kg").valor, 310 / 15, 1e-9), "El módulo 7 toma los kilos por cajón del historial", campo(conPollo, "m7.kg").valor);
+ok(campo(conPollo, "m7.compra").origen === "auto" && cerca(campo(conPollo, "m7.compra").valor, rp.precioPromedio!, 1e-9), "…y el precio de compra");
+ok(conPollo.historial.pollo === 2, "Cuenta los ingresos de pollo del último mes");
+const polloPisado = calcular({ ...ajustesM10, "m7.kg": 20 }, { pollo });
+ok(campo(polloPisado, "m7.kg").origen === "manual" && campo(polloPisado, "m7.kg").valor === 20, "El kilo del cajón se puede pisar a mano");
+ok(campo(calcular({}), "m7.kg").origen === "ejemplo" && mod(calcular(todoManual), 7).principal.valor === 3460, "Sin historial de pollo sigue el ejemplo del Excel (3.460)");
+
+const polloMes = resumenPolloPorMes(pollo);
+ok(polloMes.map((x) => x.clave).join() === "2026-09,2026-08" && polloMes[0].cajones === 18, "Resumen mes a mes (septiembre incluye todo el mes)", polloMes.map((x) => `${x.clave}:${x.cajones}`));
+const polloProv = resumenPolloPorProveedor(pollo);
+ok(polloProv[0].clave === "Granja Sur" && polloProv[0].cajones === 33 && polloProv[1].clave === "Avícola Norte", "Por proveedor, el que más cajones mandó primero", polloProv.map((x) => `${x.clave}:${x.cajones}`));
 
 console.log(`\n${fallos === 0 ? "TODO OK" : `${fallos} FALLA(S)`}`);
 process.exit(fallos === 0 ? 0 : 1);
