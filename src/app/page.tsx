@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileText, Wallet, Users, TrendingUp, Monitor, Landmark, Beef, Image as ImageIcon } from "lucide-react";
+import { FileText, Wallet, Users, TrendingUp, Monitor, Landmark, Beef, Calculator, Image as ImageIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { fmtMoney } from "@/lib/cheques/calculos";
 import {
@@ -353,6 +353,24 @@ export default async function Home() {
                   <ImageIcon size={13} /> Armar el flyer
                 </Link>
               </div>
+            </div>
+
+            <div style={{ background: "white", border: "1px solid #e0e0e0", borderTop: "4px solid #B9770E", borderRadius: 10, padding: 18 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: "#B9770E", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Calculator size={17} color="white" />
+                  </div>
+                  <span style={{ fontWeight: 700, color: "#B9770E", fontSize: 15 }}>Calculadora de precios</span>
+                </div>
+                <Link href="/precios" style={{ background: "#B9770E", color: "white", fontSize: 12, fontWeight: 700, padding: "6px 10px", borderRadius: 6, textDecoration: "none", flexShrink: 0 }}>
+                  Abrir →
+                </Link>
+              </div>
+              <p style={{ fontSize: 12, color: "#555", margin: 0, lineHeight: 1.5 }}>
+                Del costo neto al precio de góndola con el margen que querés (sin IVA, con 21% o 10,5%),
+                o al revés: cuánto te deja un precio.
+              </p>
             </div>
           </div>
 

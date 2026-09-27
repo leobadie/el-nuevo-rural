@@ -36,7 +36,9 @@
     "verificar:base-corte": "node verificacion/base-corte.mts",
     "verificar:descuento-calculos": "node verificacion/descuento-calculos.mts",
     "verificar:descuento": "node verificacion/descuento.mjs",
-    "verificar:base-descuento": "node verificacion/base-descuento.mts"
+    "verificar:base-descuento": "node verificacion/base-descuento.mts",
+    "verificar:precios-calculos": "node verificacion/precios-calculos.mts",
+    "verificar:precios": "node verificacion/precios.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
