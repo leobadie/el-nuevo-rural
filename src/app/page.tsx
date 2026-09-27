@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { FileText, Wallet, Users, TrendingUp, Monitor, Landmark, Image as ImageIcon } from "lucide-react";
+import { FileText, Wallet, Users, TrendingUp, Monitor, Landmark, Beef, Image as ImageIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { fmtMoney } from "@/lib/cheques/calculos";
 import {
@@ -300,6 +300,25 @@ export default async function Home() {
                     <div style={{ fontSize: 18, fontWeight: 700, color: datosMes.utilidad >= 0 ? "#6C3483" : "#922B21" }}>{fmtMoney(datosMes.utilidad)}</div>
                   </div>
                 </div>
+              </div>
+            )}
+            {esAdmin && (
+              <div style={{ background: "white", border: "1px solid #e0e0e0", borderTop: "4px solid #922B21", borderRadius: 10, padding: 18 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: "#922B21", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <Beef size={17} color="white" />
+                    </div>
+                    <span style={{ fontWeight: 700, color: "#922B21", fontSize: 15 }}>Carnicería</span>
+                  </div>
+                  <Link href="/carniceria" style={{ background: "#922B21", color: "white", fontSize: 12, fontWeight: 700, padding: "6px 10px", borderRadius: 6, textDecoration: "none" }}>
+                    Ver módulo →
+                  </Link>
+                </div>
+                <p style={{ fontSize: 12, color: "#555", margin: 0, lineHeight: 1.5 }}>
+                  Costo real del kilo, escandallo de la media res, precios de pizarra, gastos y lo que te queda
+                  limpio. Con el historial de cada media res que entra.
+                </p>
               </div>
             )}
             <div style={{ background: "white", border: "1px solid #e0e0e0", borderTop: "4px solid #1E7B4D", borderRadius: 10, padding: 18 }}>
