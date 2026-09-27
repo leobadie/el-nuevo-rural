@@ -53,6 +53,11 @@ export interface Proveedor {
   id: string;
   nombre: string;
   telefono: string | null;
+  /**
+   * % que descuenta en algunas boletas (SPEC-descuento-proveedores.md). null = no tiene.
+   * Opcional porque antes de la migración 025 la columna no existe.
+   */
+  descuento_pct?: number | null;
 }
 
 export interface Categoria {
@@ -116,6 +121,12 @@ export interface EntregaProveedor {
   monto: number;
   comprobante: string | null;
   detalle: string | null;
+  /**
+   * Con descuento, el importe de la boleta y el %; `monto` es lo que se debe, ya descontado.
+   * null (o ausentes, antes de la 025) = sin descuento.
+   */
+  monto_boleta?: number | null;
+  descuento_pct?: number | null;
   creado_el: string;
   creado_por: string | null;
 }

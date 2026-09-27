@@ -5,7 +5,9 @@ import { ArrowLeft, Plus, Trash2, X } from "lucide-react";
 import {
   buildCuentasProveedores,
   entregasConSaldo,
+  esDescuentoValido,
   esPagoAProveedor,
+  montoConDescuento,
   pagosConSaldo,
   repartirFIFO,
   repartirTodoFIFO,
@@ -69,6 +71,7 @@ export default function CuentaProveedoresTab({
   onImputar,
   onDesimputar,
   onSetCorte,
+  onSetDescuentoProveedor,
 }: {
   movs: Movimiento[];
   entregas: EntregaProveedor[];
@@ -89,6 +92,8 @@ export default function CuentaProveedoresTab({
   }) => Promise<void>;
   onImputar: (aplicaciones: { movimiento_id: string; entrega_id: string; monto: number }[]) => Promise<void>;
   onDesimputar: (id: string) => Promise<void>;
+  /** Guarda el % de descuento por boleta de un proveedor (null = sin descuento). Devuelve el error, o null. */
+  onSetDescuentoProveedor: (id: string, pct: number | null) => Promise<string | null>;
 }) {
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
 
@@ -117,6 +122,8 @@ export default function CuentaProveedoresTab({
         onPagarEntrega={onPagarEntrega}
         onImputar={onImputar}
         onDesimputar={onDesimputar}
+        datosProveedor={proveedores.find((p) => p.nombre === seleccionado)}
+        onSetDescuento={onSetDescuentoProveedor}
       />
     );
   }
@@ -136,7 +143,7 @@ export default function CuentaProveedoresTab({
 
       <AvisoCorte corte={corte} pagosOcultos={pagosOcultos} esAdmin={esAdmin} onSetCorte={onSetCorte} />
 
-      <NuevaEntregaForm proveedores={proveedores} onAddEntrega={onAddEntrega} />
+      <NuevaEntregaForm proveedores={proveedores} onAddEntrega={onAddEntrega} onSetDescuento={onSetDescuentoProveedor} />
 
       <div style={{ overflowX: "auto", border: "1px solid #ddd", borderRadius: 8 }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -268,14 +275,113 @@ function AvisoCorte({
   );
 }
 
+/** "5%", "2,5%": el % como se lee en la boleta. */
+function fmtPct(pct: number): string {
+  return `${pct.toLocaleString("es-AR", { maximumFractionDigits: 2 })}%`;
+}
+
+/**
+ * El % que descuenta este proveedor en algunas boletas (SPEC-descuento-proveedores.md, punto 1).
+ * Configurarlo no cambia nada de lo ya cargado: sólo hace aparecer la casilla en las boletas nuevas.
+ */
+function DescuentoProveedor({
+  proveedor,
+  onGuardar,
+}: {
+  proveedor: Proveedor;
+  onGuardar: (id: string, pct: number | null) => Promise<string | null>;
+}) {
+  const actual = esDescuentoValido(Number(proveedor.descuento_pct)) ? Number(proveedor.descuento_pct) : null;
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(actual != null ? String(actual) : "");
+  const [error, setError] = useState("");
+
+  async function guardar(pct: number | null) {
+    if (pct != null && !esDescuentoValido(pct)) {
+      setError("El descuento tiene que ser más de 0% y menos de 100%.");
+      return;
+    }
+    const e = await onGuardar(proveedor.id, pct);
+    if (e) {
+      setError(e);
+      return;
+    }
+    setError("");
+    setEditando(false);
+  }
+
+  return (
+    <div style={{ fontSize: 12, color: "#555", marginBottom: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }} data-test="descuento-proveedor">
+      {!editando ? (
+        <>
+          <span data-test="descuento-proveedor-texto">
+            {actual != null ? (
+              <>Descuenta <strong>{fmtPct(actual)}</strong> en algunas boletas: al cargar una aparece la casilla para aplicarlo.</>
+            ) : (
+              <>Sin descuento por boleta.</>
+            )}
+          </span>
+          <button
+            onClick={() => setEditando(true)}
+            style={{ ...botonStyle, background: "transparent", color: RED, padding: "2px 4px", textDecoration: "underline" }}
+            data-test="btn-descuento-proveedor"
+          >
+            {actual != null ? "Cambiar" : "Configurar descuento"}
+          </button>
+        </>
+      ) : (
+        <>
+          <span>Descuento por boleta:</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+            placeholder="5"
+            style={{ ...inputStyle, width: 70 }}
+            data-test="descuento-proveedor-input"
+          />
+          <span>%</span>
+          <button
+            onClick={() => void guardar(valor.trim() === "" ? null : parseFloat(valor.replace(",", ".")))}
+            style={{ ...botonStyle, background: RED, color: "white" }}
+            data-test="descuento-proveedor-guardar"
+          >
+            Guardar
+          </button>
+          {actual != null && (
+            <button onClick={() => void guardar(null)} style={{ ...botonStyle, background: "#F0F0F0", color: "#1A1A2E" }} data-test="descuento-proveedor-quitar">
+              Quitar
+            </button>
+          )}
+          <button onClick={() => setEditando(false)} style={{ ...botonStyle, background: "transparent", color: "#555" }}>
+            Cancelar
+          </button>
+        </>
+      )}
+      {error && (
+        <span style={{ color: ROJO_TX, fontWeight: 700, flex: "1 1 100%" }} data-test="descuento-proveedor-error">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function NuevaEntregaForm({
   proveedores,
   onAddEntrega,
   proveedorFijo,
+  onSetDescuento,
 }: {
   proveedores: Proveedor[];
   onAddEntrega: (nueva: NuevaEntregaProveedor) => Promise<void>;
   proveedorFijo?: string;
+  /**
+   * Para configurar el % desde acá: un proveedor sin entregas no tiene ficha todavía, y la
+   * primera boleta con descuento se carga desde este formulario.
+   */
+  onSetDescuento?: (id: string, pct: number | null) => Promise<string | null>;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [proveedor, setProveedor] = useState("");
@@ -285,6 +391,15 @@ function NuevaEntregaForm({
   const [detalle, setDetalle] = useState("");
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
+  // Se destilda solo al cambiar de proveedor: el descuento va sólo en algunas boletas (SPEC 2).
+  const [aplicarDescuento, setAplicarDescuento] = useState(false);
+
+  const nombreElegido = proveedorFijo || proveedor;
+  const datosElegido = proveedores.find((p) => p.nombre === nombreElegido);
+  const pctProveedor = datosElegido?.descuento_pct;
+  const pct = esDescuentoValido(Number(pctProveedor)) ? Number(pctProveedor) : null;
+  const importe = parseFloat(monto);
+  const conDescuento = pct != null && aplicarDescuento && importe > 0;
 
   async function guardar() {
     const nombre = proveedorFijo || proveedor;
@@ -305,15 +420,18 @@ function NuevaEntregaForm({
     await onAddEntrega({
       proveedor: nombre,
       fecha,
-      monto: num,
+      // Con descuento, monto es lo que se debe; la boleta y el % quedan para mostrarlo (SPEC 4).
+      monto: conDescuento ? montoConDescuento(num, pct!) : num,
       comprobante: comprobante.trim() || null,
       detalle: detalle.trim() || null,
+      ...(conDescuento ? { monto_boleta: num, descuento_pct: pct } : {}),
     });
     setGuardando(false);
     setMonto("");
     setComprobante("");
     setDetalle("");
     setError("");
+    setAplicarDescuento(false);
     setAbierto(false);
   }
 
@@ -341,7 +459,15 @@ function NuevaEntregaForm({
         {!proveedorFijo && (
           <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
             Proveedor
-            <select value={proveedor} onChange={(e) => setProveedor(e.target.value)} style={inputStyle} data-test="entrega-proveedor">
+            <select
+              value={proveedor}
+              onChange={(e) => {
+                setProveedor(e.target.value);
+                setAplicarDescuento(false);
+              }}
+              style={inputStyle}
+              data-test="entrega-proveedor"
+            >
               <option value="">— elegir —</option>
               {proveedores.map((p) => (
                 <option key={p.id} value={p.nombre}>
@@ -356,7 +482,7 @@ function NuevaEntregaForm({
           <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} data-test="entrega-fecha" />
         </label>
         <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
-          Monto
+          Importe de la boleta
           <input type="number" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0" style={inputStyle} data-test="entrega-monto" />
         </label>
         <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
@@ -368,6 +494,30 @@ function NuevaEntregaForm({
           <input value={detalle} onChange={(e) => setDetalle(e.target.value)} placeholder="opcional" style={inputStyle} />
         </label>
       </div>
+      {datosElegido && onSetDescuento && (
+        <div style={{ marginTop: 10 }}>
+          <DescuentoProveedor key={datosElegido.id} proveedor={datosElegido} onGuardar={onSetDescuento} />
+        </div>
+      )}
+      {pct != null && (
+        <div style={{ marginTop: 10, fontSize: 13 }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontWeight: 700 }}>
+            <input
+              type="checkbox"
+              checked={aplicarDescuento}
+              onChange={(e) => setAplicarDescuento(e.target.checked)}
+              style={{ width: 17, height: 17 }}
+              data-test="entrega-aplicar-descuento"
+            />
+            Aplicar {fmtPct(pct)} de descuento
+          </label>
+          {conDescuento && (
+            <div style={{ marginTop: 6, color: "#555" }} data-test="entrega-vista-descuento">
+              Boleta {fmtMoneyIE(importe)} − {fmtPct(pct)} = debés <strong>{fmtMoneyIE(montoConDescuento(importe, pct))}</strong>
+            </div>
+          )}
+        </div>
+      )}
       {error && (
         <div style={{ color: ROJO_TX, fontSize: 12, marginTop: 8, fontWeight: 700 }} data-test="entrega-error">
           {error}
@@ -398,8 +548,13 @@ function FichaProveedor({
   onPagarEntrega,
   onImputar,
   onDesimputar,
+  datosProveedor,
+  onSetDescuento,
 }: {
   proveedor: string;
+  /** La fila de la tabla proveedores (para el % de descuento). Puede faltar si sólo hay entregas. */
+  datosProveedor?: Proveedor;
+  onSetDescuento: (id: string, pct: number | null) => Promise<string | null>;
   movs: Movimiento[];
   entregas: EntregaProveedor[];
   imputaciones: ImputacionPago[];
@@ -466,7 +621,8 @@ function FichaProveedor({
         <ArrowLeft size={14} /> Volver a todos los proveedores
       </button>
 
-      <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 12px" }}>{proveedor}</h2>
+      <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 6px" }}>{proveedor}</h2>
+      {datosProveedor && <DescuentoProveedor proveedor={datosProveedor} onGuardar={onSetDescuento} />}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 18 }}>
         <div style={{ background: "#F8F9FA", borderRadius: 8, padding: 12 }}>
@@ -487,7 +643,7 @@ function FichaProveedor({
         </div>
       </div>
 
-      <NuevaEntregaForm proveedores={[]} proveedorFijo={proveedor} onAddEntrega={onAddEntrega} />
+      <NuevaEntregaForm proveedores={datosProveedor ? [datosProveedor] : []} proveedorFijo={proveedor} onAddEntrega={onAddEntrega} />
 
       {aCuenta > 0 && pendientes.length > 0 && (
         <div
@@ -534,7 +690,14 @@ function FichaProveedor({
                   {e.comprobante || "—"}
                   {e.detalle && <div style={{ fontSize: 11, color: "#888" }}>{e.detalle}</div>}
                 </td>
-                <td style={{ ...tdStyle, fontWeight: 700 }}>{fmtMoneyIE(e.monto)}</td>
+                <td style={{ ...tdStyle, fontWeight: 700 }} data-test="entrega-monto-fila">
+                  {fmtMoneyIE(e.monto)}
+                  {e.monto_boleta != null && e.descuento_pct != null && (
+                    <div style={{ fontSize: 11, color: "#888", fontWeight: 400, whiteSpace: "nowrap" }}>
+                      boleta {fmtMoneyIE(Number(e.monto_boleta))} −{fmtPct(Number(e.descuento_pct))}
+                    </div>
+                  )}
+                </td>
                 <td style={tdStyle}>{fmtMoneyIE(e.pagado)}</td>
                 <td style={{ ...tdStyle, fontWeight: 700, color: e.saldo > 0 ? ROJO_TX : VERDE }} data-test="entrega-saldo">
                   {fmtMoneyIE(e.saldo)}

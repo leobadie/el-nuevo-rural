@@ -16,6 +16,22 @@ const centavos = (n: unknown): number => Math.round((Number(n) || 0) * 100);
 const pesos = (c: number): number => c / 100;
 
 /**
+ * Lo que se debe de una boleta con descuento (SPEC-descuento-proveedores.md): el descuento se
+ * redondea a centavos y se resta, así la boleta, el descuento y lo que se debe siempre suman.
+ * Con 5% sobre $ 33.333,33 se descuentan $ 1.666,67 y se deben $ 31.666,66.
+ */
+export function montoConDescuento(boleta: number, pct: number): number {
+  const boletaC = centavos(boleta);
+  const descuentoC = Math.round((boletaC * pct) / 100);
+  return pesos(boletaC - descuentoC);
+}
+
+/** Un % de descuento válido: más de 0 y menos de 100 (la base exige lo mismo). */
+export function esDescuentoValido(pct: number | null | undefined): pct is number {
+  return pct != null && Number.isFinite(pct) && pct > 0 && pct < 100;
+}
+
+/**
  * Es pago a un proveedor todo egreso con ese proveedor cargado, sin filtrar por categoría (R2.1),
  * siempre que se haya cargado a partir del corte (R8).
  *

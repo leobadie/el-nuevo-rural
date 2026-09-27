@@ -407,6 +407,17 @@ export default function IngresosEgresosShell({
     }
   }
 
+  /** El % que descuenta un proveedor en algunas boletas (SPEC-descuento-proveedores.md). */
+  async function setDescuentoProveedor(id: string, pct: number | null): Promise<string | null> {
+    const { data, error } = await supabase.from("proveedores").update({ descuento_pct: pct }).eq("id", id).select().single();
+    if (error || !data) {
+      console.error(error);
+      return "No se pudo guardar el descuento. Probá de nuevo.";
+    }
+    setProveedores((prev) => prev.map((p) => (p.id === id ? (data as Proveedor) : p)));
+    return null;
+  }
+
   async function addCategoria(nombre: string) {
     if (categorias.some((c) => c.nombre.toLowerCase() === nombre.trim().toLowerCase())) return;
     const { data, error } = await supabase.from("categorias").insert({ nombre: nombre.trim() }).select().single();
@@ -690,6 +701,7 @@ export default function IngresosEgresosShell({
           onImputar={imputarPago}
           onDesimputar={desimputarPago}
           onSetCorte={setCorteCuentaCorriente}
+          onSetDescuentoProveedor={setDescuentoProveedor}
         />
       )}
       {tab === "proveedores" && <ProveedoresTab movs={movs} />}

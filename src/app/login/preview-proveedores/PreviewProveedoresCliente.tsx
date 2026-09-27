@@ -23,6 +23,8 @@ const PROVEEDORES: Proveedor[] = [
   { id: "p2", nombre: "Pepsi", telefono: null },
   { id: "p3", nombre: "Miga", telefono: null },
   { id: "p4", nombre: "Katy (verdulería)", telefono: null },
+  // Sin entregas ni descuento: el verificador le configura el 5% desde el formulario de carga.
+  { id: "p5", nombre: "SANTA RITA SOTO (MAYORISTA)", telefono: null, descuento_pct: null },
 ];
 
 const ENTREGAS_INICIALES: EntregaProveedor[] = [
@@ -99,6 +101,12 @@ export default function PreviewProveedoresCliente() {
     setImputaciones((prev) => prev.filter((im) => im.entrega_id !== id));
   }
 
+  const [proveedores, setProveedores] = useState(PROVEEDORES);
+  async function setDescuentoProveedor(id: string, pct: number | null) {
+    setProveedores((prev) => prev.map((p) => (p.id === id ? { ...p, descuento_pct: pct } : p)));
+    return null;
+  }
+
   async function imputar(aplicaciones: { movimiento_id: string; entrega_id: string; monto: number }[]) {
     setImputaciones((prev) => [
       ...prev,
@@ -147,7 +155,7 @@ export default function PreviewProveedoresCliente() {
         movs={movs}
         entregas={entregas}
         imputaciones={imputaciones}
-        proveedores={PROVEEDORES}
+        proveedores={proveedores}
         esAdmin
         corte={corte}
         onAddEntrega={addEntrega}
@@ -156,6 +164,7 @@ export default function PreviewProveedoresCliente() {
         onImputar={imputar}
         onDesimputar={desimputar}
         onSetCorte={async (nuevo) => setCorte(nuevo)}
+        onSetDescuentoProveedor={setDescuentoProveedor}
       />
     </div>
   );
