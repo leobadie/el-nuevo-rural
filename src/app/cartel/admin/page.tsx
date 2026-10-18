@@ -32,7 +32,8 @@ export default async function CartelAdminPage({
   const [{ data, error }, { data: dPantallas, error: ePantallas }, { data: dAsig }, { data: dConfig, error: eConfig }] =
     await Promise.all([
       supabase.from("cartel_placas").select("*").order("orden", { ascending: true }),
-      supabase.from("cartel_pantallas").select("slug, nombre, seccion, activa, orden"),
+      // "*" trae el giro cuando la migración 028 está aplicada, sin romper si no lo está.
+      supabase.from("cartel_pantallas").select("*"),
       supabase.from("cartel_placa_pantalla").select("placa_id, pantalla_slug"),
       supabase.from("flyer_config").select("titulo, seccion, vigencia, direccion, telefono, horarios, instagram").eq("id", 1).maybeSingle(),
     ]);

@@ -110,3 +110,20 @@ no suponiendo.
 - `verificar:base-cartel` se extiende a la tabla de latidos: un anónimo no puede
   escribir la fila de otra pantalla ni inventar una pantalla.
 - Prueba final en el TV del local, con foto.
+
+## 10. Agregado tras la prueba en el local (18/10/2026)
+
+El usuario probó en un TV: la app anda, rota sola y con `?rotar=270` queda derecha y a
+pantalla completa. Aparecieron tres cosas, que se suman al alcance:
+
+22. **El protector de pantalla se activa** con imágenes fijas. La página pide mantener la
+    pantalla prendida (Wake Lock) y, de respaldo, reproduce en loop un video mínimo de 4 px
+    (`public/cartel/despierto.webm`): el reproductor de cdenet evitaba el protector porque
+    pasaba video. En modo captura no va.
+23. **La barra del navegador tapa el borde** (se comía la última cifra del precio). Cualquier
+    botón del control pone la página en pantalla completa: el navegador solo lo permite
+    después de una acción de alguien.
+24. **El giro se elige en el admin** ("Cómo está montado", migración 028), para no tener que
+    ir al local a cambiar la dirección. `?rotar=` en la dirección sigue teniendo prioridad.
+25. **Se actualiza sola** (adelanto del punto 12): cada 10 minutos la página pide su propia
+    dirección y, si el servidor tiene otra versión, se recarga. Sin internet no recarga.

@@ -42,7 +42,9 @@ export default async function CartelTvPage({
     // tranquilo, no un error.
     const { data: fila, error: ePantalla } = await supabase
       .from("cartel_pantallas")
-      .select("slug, nombre, seccion, activa, orden")
+      // "*" para traer el giro cuando la migración 028 está aplicada, sin que
+      // la página dé 404 mientras no lo esté.
+      .select("*")
       .eq("slug", slug)
       .eq("activa", true)
       .maybeSingle();
@@ -81,7 +83,8 @@ export default async function CartelTvPage({
       pantalla={pantalla}
       indiceFijo={indiceFijo}
       // ?rotar=90 o 270 para los TVs montados parados (SPEC-cartel-tv-en-vivo.md).
-      rotar={rotacionDe(rotar)}
+      // Sin el parámetro manda el giro elegido en el admin.
+      rotar={rotar != null && rotar !== "" ? rotacionDe(rotar) : null}
       // Vercel lo define en cada deploy; en la compu de desarrollo no existe.
       version={process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local"}
     />

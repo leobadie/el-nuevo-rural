@@ -79,7 +79,14 @@ function aSlug(texto: string): string {
     .slice(0, 40);
 }
 
-const VACIO = { slug: "", nombre: "", seccion: "", activa: true, orden: 0 };
+const VACIO = { slug: "", nombre: "", seccion: "", activa: true, orden: 0, rotacion: 0 };
+
+/** Cómo está montado el TV, en palabras de quien lo mira y no en grados. */
+const GIROS = [
+  { valor: 0, texto: "Derecho (no girar)" },
+  { valor: 270, texto: "Parado, girado a la izquierda" },
+  { valor: 90, texto: "Parado, girado a la derecha" },
+];
 
 export default function PantallasPanel({
   pantallasIniciales,
@@ -137,6 +144,9 @@ export default function PantallasPanel({
   // toca: cambiarlo dejaría al televisor apuntando a una dirección que ya no
   // existe, y nadie se enteraría hasta pasar por el local.
   const slugPropuesto = editando ?? (form.slug || aSlug(form.nombre));
+  // La fila trae el giro solo si la migración 028 está aplicada: recién ahí se
+  // puede mandar siempre, incluso para volver a "derecho".
+  const editandoConGiro = editando != null && pantallas.find((p) => p.slug === editando)?.rotacion !== undefined;
 
   function limpiar() {
     setForm(VACIO);
@@ -178,6 +188,9 @@ export default function PantallasPanel({
       seccion: form.seccion.trim() || null,
       activa: form.activa,
       orden: Number(form.orden) || 0,
+      // Solo se manda si hace falta: así guardar un televisor sigue andando aunque
+      // la migración 028 todavía no esté aplicada.
+      ...(form.rotacion || editandoConGiro ? { rotacion: form.rotacion } : {}),
     };
 
     setGuardando(true);
@@ -286,6 +299,7 @@ export default function PantallasPanel({
               <div style={{ fontSize: 12, color: "#64748B", wordBreak: "break-all" }}>
                 /cartel/tv/{p.slug}
                 {p.seccion ? ` · ${p.seccion}` : " · todas las secciones"}
+                {p.rotacion ? ` · ${GIROS.find((g) => g.valor === p.rotacion)?.texto.toLowerCase()}` : ""}
               </div>
               {p.activa && <EstadoTvLinea latido={latidos[p.slug]} ahora={ahora} />}
             </div>
@@ -309,6 +323,7 @@ export default function PantallasPanel({
                     seccion: p.seccion ?? "",
                     activa: p.activa,
                     orden: p.orden,
+                    rotacion: p.rotacion ?? 0,
                   });
                 }}
                 style={iconoBoton}
@@ -365,6 +380,20 @@ export default function PantallasPanel({
             value={form.orden}
             onChange={(e) => setForm((f) => ({ ...f, orden: Number(e.target.value) }))}
           />
+        </label>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={etiqueta}>Cómo está montado</span>
+          <select
+            style={input}
+            value={form.rotacion}
+            onChange={(e) => setForm((f) => ({ ...f, rotacion: Number(e.target.value) }))}
+          >
+            {GIROS.map((g) => (
+              <option key={g.valor} value={g.valor}>
+                {g.texto}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
 

@@ -11,14 +11,30 @@
  *   URL_BASE   por defecto http://localhost:3000
  *   NAVEGADOR  ruta a un ejecutable de Chromium/Edge/Chrome
  *
- * Solo lee: recorre las placas que ya están cargadas con ?fijo=N y no crea
- * ninguna. Las placas de prueba se verían en el televisor que esté mostrando
- * la app en el local. Si falta algún tipo de placa (con foto, sin foto, imagen)
- * ese check sale SKIP, no PASS.
+ * No crea placas: recorre las que ya están cargadas con ?fijo=N, porque una
+ * placa de prueba se vería en los televisores del local. Si falta algún tipo
+ * (con foto, sin foto, imagen) ese check sale SKIP, no PASS. Lo único que crea
+ * es una pantalla apartada (zz-prueba-claude-giro) para probar el giro del
+ * admin; ningún TV la abre y se borra al terminar.
  */
 import { chromium } from "playwright-core";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { createClient } = require("@supabase/supabase-js");
+
+function leerEnv() {
+  const env = { ...process.env };
+  const archivo = path.join(process.cwd(), ".env.local");
+  if (!fs.existsSync(archivo)) return env;
+  for (const linea of fs.readFileSync(archivo, "utf8").split(/\r?\n/)) {
+    const m = linea.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (m && !env[m[1]]) env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+  }
+  return env;
+}
 
 const BASE = process.env.URL_BASE || "http://localhost:3000";
 const SALIDA = path.join(process.cwd(), "verificacion", "capturas", "cartel-en-vivo");
@@ -208,6 +224,83 @@ try {
     ok(r.ms >= 300 && r.ms <= 700, "la salida dura lo previsto (450 ms)", `${r.ms} ms`);
     ok(!r.escondida, "la placa nueva entra visible, no se queda escondida");
   } else skip("salida entre placas", "hay una sola placa vigente");
+
+  // ---- Que el TV no se duerma y pase a pantalla completa ----------------
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    const t = await ctx.newPage();
+    const video = await t.request.get(`${BASE}/cartel/despierto.webm`, { maxRedirects: 0 });
+    ok(
+      video.status() === 200 && (video.headers()["content-type"] ?? "").includes("webm"),
+      "el video que mantiene despierto al TV se baja sin sesión",
+      `${video.status()} ${video.headers()["content-type"] ?? ""}`,
+    );
+    await abrir(t, "/cartel/tv/acceso?rotar=270");
+    const antes = await t.$eval(".cartel-despierto", (v) => v.currentTime);
+    await t.waitForTimeout(1500);
+    const estado = await t.$eval(".cartel-despierto", (v) => ({ t: v.currentTime, pausado: v.paused, loop: v.loop }));
+    ok(!estado.pausado && estado.t !== antes && estado.loop, "el video mínimo se reproduce en loop", JSON.stringify(estado));
+    const tam = await t.$eval(".cartel-despierto", (v) => v.getBoundingClientRect().width);
+    ok(tam <= 4, "y no se ve (4 px)", `${tam}px`);
+
+    await t.keyboard.press("Enter");
+    await t.waitForTimeout(500);
+    ok(await t.evaluate(() => !!document.fullscreenElement), "un botón del control pone la página en pantalla completa");
+
+    await abrir(t, "/cartel/tv/acceso?fijo=0");
+    ok(!(await t.$(".cartel-despierto")), "en modo captura no va el video (no tiene que salir en los PNG)");
+
+    // ---- Actualización sola (solo contra un deploy: en desarrollo no hay versión)
+    await abrir(t, "/cartel/tv/acceso");
+    const version = await t.$eval(".cartel-marco", (el) => el.dataset.version ?? "");
+    if (!version || version === "local") {
+      skip("se recarga sola con una versión nueva", "en desarrollo no hay versión de deploy; correr con URL_BASE de producción");
+    } else {
+      // Se adelanta el reloj y se hace creer al TV que el servidor ya tiene otra versión.
+      await ctx.clock.install();
+      await abrir(t, "/cartel/tv/acceso");
+      await t.route(/\/cartel\/tv\/acceso$/, async (route) => {
+        const resp = await route.fetch();
+        const html = (await resp.text()).replace(/data-version="[^"]+"/, 'data-version="zz-nueva"');
+        await route.fulfill({ response: resp, body: html });
+      });
+      const recarga = t.waitForEvent("load", { timeout: 30_000 }).then(() => true).catch(() => false);
+      await ctx.clock.fastForward("10:30");
+      ok(await recarga, "con una versión nueva publicada, la página se recarga sola", `tenía ${version}`);
+      await t.unroute(/\/cartel\/tv\/acceso$/);
+    }
+    await ctx.close();
+  }
+
+  // ---- Giro elegido en el admin (migración 028) --------------------------
+  {
+    const env = leerEnv();
+    const admin = env.SUPABASE_SERVICE_ROLE_KEY
+      ? createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+      : null;
+    const { error: sin028 } = admin
+      ? await admin.from("cartel_pantallas").select("rotacion").limit(1)
+      : { error: { message: "sin service_role key" } };
+    if (sin028) {
+      skip("giro elegido en el admin", `falta la migración 028 (${sin028.message})`);
+    } else {
+      // Pantalla propia y apartada: solo se ve en su dirección, ningún TV real la abre.
+      const slug = "zz-prueba-claude-giro";
+      await admin.from("cartel_pantallas").delete().eq("slug", slug);
+      await admin.from("cartel_pantallas").insert({ slug, nombre: "ZZPRUEBA giro", activa: true, orden: 9201, rotacion: 270 });
+      try {
+        const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+        const g = await ctx.newPage();
+        await abrir(g, `/cartel/tv/${slug}?fijo=0`);
+        ok(!!(await g.$(".cartel-rotado-270")), "sin ?rotar, la pantalla usa el giro guardado en el admin");
+        await abrir(g, `/cartel/tv/${slug}?fijo=0&rotar=90`);
+        ok(!!(await g.$(".cartel-rotado-90")), "?rotar en la dirección tiene prioridad sobre el admin");
+        await ctx.close();
+      } finally {
+        await admin.from("cartel_pantallas").delete().eq("slug", slug);
+      }
+    }
+  }
 
   // ---- 8. Estado de los televisores en el admin -------------------------
   // En el banco de pruebas (base en memoria): carniceria-1 latió hace 2 min,

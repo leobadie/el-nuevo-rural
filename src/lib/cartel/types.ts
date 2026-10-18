@@ -47,6 +47,11 @@ export type Pantalla = {
   seccion: string | null;
   activa: boolean;
   orden: number;
+  /**
+   * Grados para girar la placa en un TV montado parado (migración 028).
+   * Opcional porque las filas leídas antes de la migración no lo traen.
+   */
+  rotacion?: number;
 };
 
 /** Fila de la tabla puente: esta placa va explícitamente a esta pantalla. */

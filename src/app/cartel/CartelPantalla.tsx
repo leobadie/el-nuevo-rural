@@ -12,6 +12,7 @@ import {
   hoyISO,
   placasDePantalla,
   placasParaMostrar,
+  rotacionDe,
 } from "@/lib/cartel/placas";
 
 import type { Rotacion } from "@/lib/cartel/placas";
@@ -22,6 +23,23 @@ const FONDO_BASE = "#12203c";
 
 /** Cada cuánto el televisor vuelve a preguntar por las ofertas. */
 const REFRESCO_MS = 5 * 60 * 1000;
+
+/** Cada cuánto el televisor se fija si se publicó una versión nueva de la app. */
+const MIRAR_VERSION_MS = 10 * 60 * 1000;
+
+/** Con más de esto abierta, la página se recarga en la madrugada. */
+const RECARGA_DIARIA_MS = 20 * 60 * 60 * 1000;
+
+/** Hora del local, sin depender de la zona horaria que tenga configurada el TV. */
+function horaLocal(): number {
+  return Number(
+    new Intl.DateTimeFormat("es-AR", {
+      timeZone: "America/Argentina/Buenos_Aires",
+      hour: "numeric",
+      hour12: false,
+    }).format(new Date()),
+  );
+}
 
 export default function CartelPantalla({
   placasIniciales,
@@ -48,10 +66,14 @@ export default function CartelPantalla({
    * Grados para girar la placa dentro de una pantalla apaisada: el navegador
    * del TV manda la imagen acostada aunque el televisor esté montado parado.
    */
-  rotar?: Rotacion;
+  rotar?: Rotacion | null;
   /** Commit del deploy, para que el admin sepa qué versión tiene cargada cada TV. */
   version?: string | null;
 }) {
+  // La fila del televisor se relee en cada refresco: así un cambio de sector o
+  // de giro hecho desde el admin le llega sin que nadie vaya hasta el local.
+  const [pantallaViva, setPantallaViva] = useState<Pantalla | null>(pantalla);
+  const [cargadaEl] = useState(() => Date.now());
   const [crudas, setCrudas] = useState<Placa[]>(placasIniciales);
   const [asignaciones, setAsignaciones] = useState<Asignacion[]>(asignacionesIniciales);
   const [hoy, setHoy] = useState(() => hoyISO());
@@ -62,16 +84,20 @@ export default function CartelPantalla({
   const [saliendoDe, setSaliendoDe] = useState<string | null>(null);
 
   const modoCaptura = indiceFijo != null;
+  const slugPantalla = pantalla?.slug ?? null;
 
   // Las dos funciones filtran por vigencia y, si no queda nada, devuelven las de
   // demostración: la lista nunca viene vacía, así que el TV nunca queda negro.
   const placas = useMemo(
     () =>
-      pantalla
-        ? placasDePantalla(crudas, asignaciones, pantalla, hoy)
+      pantallaViva
+        ? placasDePantalla(crudas, asignaciones, pantallaViva, hoy)
         : placasParaMostrar(crudas, hoy, seccion),
-    [crudas, asignaciones, pantalla, hoy, seccion],
+    [crudas, asignaciones, pantallaViva, hoy, seccion],
   );
+
+  // ?rotar= en la dirección manda; si no está, el giro elegido en el admin.
+  const giro: Rotacion = rotar ?? rotacionDe(String(pantallaViva?.rotacion ?? 0));
 
   const posicion =
     placas.length > 0 ? ((modoCaptura ? indiceFijo! : indice) % placas.length + placas.length) % placas.length : 0;
@@ -143,13 +169,24 @@ export default function CartelPantalla({
       // Las asignaciones se releen en la misma vuelta: si no, mover una oferta
       // de un televisor a otro desde el admin no se vería hasta reiniciar el TV.
       // Solo hace falta cuando esta pantalla es un televisor concreto.
-      if (pantalla) {
+      if (slugPantalla) {
         const { data: asig, error: eAsig } = await supabase
           .from("cartel_placa_pantalla")
           .select("placa_id, pantalla_slug");
 
         if (eAsig) console.error("cartel: refresco de asignaciones fallido:", eAsig.message);
         else if (asig) setAsignaciones(asig as Asignacion[]);
+
+        // "*" y no una lista de columnas: así anda igual antes y después de la
+        // migración 028, que agrega el giro. Si la pantalla no aparece (la
+        // apagaron) se sigue con la que había: mejor eso que dejar el TV negro.
+        const { data: fila, error: eFila } = await supabase
+          .from("cartel_pantallas")
+          .select("*")
+          .eq("slug", slugPantalla)
+          .maybeSingle();
+        if (eFila) console.error("cartel: refresco de la pantalla fallido:", eFila.message);
+        else if (fila) setPantallaViva(fila as Pantalla);
       }
     } catch (e) {
       console.error("cartel: refresco fallido:", e);
@@ -158,7 +195,7 @@ export default function CartelPantalla({
       // medianoche desaparezca sola, con el televisor prendido.
       setHoy(hoyISO());
     }
-  }, [pantalla]);
+  }, [slugPantalla]);
 
   useEffect(() => {
     // En modo captura la lista no se toca: si entrara un refresco a mitad de la
@@ -169,11 +206,85 @@ export default function CartelPantalla({
     return () => clearInterval(id);
   }, [refrescar, modoCaptura]);
 
+  // ---- Actualización sola ------------------------------------------------
+  // El código que corre en el TV es el que se cargó al abrir la página: sin
+  // recargar, una versión nueva nunca le llega, y nadie va a ir a apretar F5.
+  // Cada tanto se pide la propia página y, si el servidor ya tiene otra versión,
+  // se recarga. Una vez por día, de madrugada, se recarga igual para no
+  // acumular memoria en el navegador del TV.
+  useEffect(() => {
+    if (!slugPantalla || modoCaptura || !version || version === "local") return;
+
+    const mirar = async () => {
+      try {
+        const resp = await fetch(window.location.href, { cache: "no-store" });
+        // Sin internet o con el servidor caído no se recarga: se quedaría en una
+        // página de error en vez de las ofertas.
+        if (!resp.ok) return;
+        const nueva = (await resp.text()).match(/data-version="([^"]+)"/)?.[1];
+        if (nueva && nueva !== version) {
+          window.location.reload();
+          return;
+        }
+        if (Date.now() - cargadaEl > RECARGA_DIARIA_MS && horaLocal() === 4) window.location.reload();
+      } catch {
+        // Sin red: se sigue mostrando lo que hay.
+      }
+    };
+
+    const id = setInterval(mirar, MIRAR_VERSION_MS);
+    return () => clearInterval(id);
+  }, [slugPantalla, modoCaptura, version, cargadaEl]);
+
+  // ---- Que el TV no se duerma ----------------------------------------------
+  // Con imágenes fijas el televisor pone el protector de pantalla a los pocos
+  // minutos. Se le pide al navegador que mantenga la pantalla prendida; donde
+  // eso no existe, el video mínimo en loop de abajo cumple la misma función,
+  // que es lo que hacía el reproductor de cdenet sin proponérselo.
+  useEffect(() => {
+    if (modoCaptura) return;
+    type Bloqueo = { release: () => Promise<void> };
+    const wl = (navigator as Navigator & { wakeLock?: { request: (t: "screen") => Promise<Bloqueo> } }).wakeLock;
+    if (!wl) return;
+
+    let bloqueo: Bloqueo | null = null;
+    const pedir = () => {
+      if (document.visibilityState !== "visible") return;
+      wl.request("screen")
+        .then((b) => (bloqueo = b))
+        .catch(() => {});
+    };
+    pedir();
+    // El navegador suelta el bloqueo cuando la página se oculta: al volver se pide de nuevo.
+    document.addEventListener("visibilitychange", pedir);
+    return () => {
+      document.removeEventListener("visibilitychange", pedir);
+      bloqueo?.release().catch(() => {});
+    };
+  }, [modoCaptura]);
+
+  // ---- Pantalla completa -------------------------------------------------
+  // La barra del navegador del TV tapa el borde de la placa (se comía la última
+  // cifra del precio). El navegador solo deja pasar a pantalla completa después
+  // de que alguien toca algo, así que basta con apretar OK en el control una vez.
+  useEffect(() => {
+    if (modoCaptura) return;
+    const completa = () => {
+      if (document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+      document.documentElement.requestFullscreen().catch(() => {});
+    };
+    window.addEventListener("keydown", completa);
+    window.addEventListener("click", completa);
+    return () => {
+      window.removeEventListener("keydown", completa);
+      window.removeEventListener("click", completa);
+    };
+  }, [modoCaptura]);
+
   // ---- Latido ------------------------------------------------------------
   // El televisor avisa que está prendido, para que el admin muestre cuál anda
   // y cuál no (migración 027). Si falla no pasa nada en pantalla: el aviso es
   // para la oficina, no para el cliente que mira el TV.
-  const slugPantalla = pantalla?.slug ?? null;
   useEffect(() => {
     if (!slugPantalla || modoCaptura) return;
 
@@ -199,7 +310,7 @@ export default function CartelPantalla({
   if (!placa) return null;
 
   return (
-    <div className={rotar ? `cartel-fondo cartel-rotado-${rotar}` : "cartel-fondo"}>
+    <div className={giro ? `cartel-fondo cartel-rotado-${giro}` : "cartel-fondo"}>
       {/* Con sección, el color fuerte va en la franja de arriba y no en toda la
           placa: un fondo rojo a pantalla completa cansa la vista y le come
           protagonismo al precio. */}
@@ -222,6 +333,8 @@ export default function CartelPantalla({
         data-placa={placa.id}
         data-total={placas.length}
         data-duracion={duracionMs(placa)}
+        // El TV compara esto con lo que devuelve el servidor para saber si hay versión nueva.
+        data-version={version ?? undefined}
       >
         {/* El encabezado hace de franja de sección: pintado con el color del
             sector, dice desde lejos si lo que se muestra es de carnicería o de
@@ -294,6 +407,20 @@ export default function CartelPantalla({
         </footer>
         )}
       </div>
+
+      {/* Video mínimo en loop, casi invisible: un TV que reproduce video no pone
+          el protector de pantalla. Respaldo del pedido de pantalla prendida. */}
+      {!modoCaptura && (
+        <video
+          className="cartel-despierto"
+          src="/cartel/despierto.webm"
+          muted
+          loop
+          autoPlay
+          playsInline
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }

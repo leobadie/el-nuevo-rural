@@ -582,3 +582,16 @@
     width: 100%;
   }
 }
+
+/* Video que mantiene despierto al TV: 4 píxeles en un rincón y casi
+   transparente. No va con display:none porque un video oculto así puede no
+   reproducirse, y entonces no cumple su función. */
+.cartel-despierto {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 4px;
+  height: 4px;
+  opacity: 0.01;
+  pointer-events: none;
+}
