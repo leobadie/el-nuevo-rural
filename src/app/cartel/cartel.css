@@ -103,16 +103,106 @@
   }
 }
 
-/* Un TV está prendido muchas horas: si alguien puso "reducir movimiento" en el
-   dispositivo, respetamos y cortamos la animación. */
-@media (prefers-reduced-motion: reduce) {
-  .cartel-placa {
-    animation: none;
+/* ---------- TV montado parado (?rotar=90 / 270) ----------
+   El navegador del televisor manda 1920x1080 acostado. Se calcula la escala
+   con los lados cambiados y se gira el lienzo sobre su centro. Va con
+   posición absoluta y no con el centrado del flex: un hijo más alto que el
+   contenedor no siempre queda centrado en navegadores viejos. */
+
+.cartel-rotado-90 .cartel-marco,
+.cartel-rotado-270 .cartel-marco {
+  --u: min(calc(100vh / 1080), calc(100vw / 1920));
+  position: absolute;
+  top: 50%;
+  left: 50%;
+}
+
+.cartel-rotado-90 .cartel-marco {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.cartel-rotado-270 .cartel-marco {
+  transform: translate(-50%, -50%) rotate(270deg);
+}
+
+/* ---------- Movimiento ----------
+   La placa entra (cartel-entrar), la foto hace un zoom lento mientras dura,
+   el precio cae con un golpe corto y al final la placa se desvanece antes de
+   que entre la siguiente. El golpe termina rápido a propósito: el precio es
+   lo que se lee, tiene que quedarse quieto. */
+
+.of-foto img {
+  animation: cartel-zoom var(--dur, 8000ms) linear both;
+  will-change: transform;
+}
+
+@keyframes cartel-zoom {
+  from {
+    transform: scale(1);
   }
-  .cartel-progreso-barra {
-    animation: none;
-    width: 100%;
+  to {
+    transform: scale(1.12);
   }
+}
+
+.of-precio {
+  animation: cartel-golpe 560ms cubic-bezier(0.34, 1.56, 0.64, 1) 380ms both;
+}
+
+@keyframes cartel-golpe {
+  from {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.of-cinta {
+  animation: cartel-cinta 480ms cubic-bezier(0.34, 1.56, 0.64, 1) 700ms both;
+}
+
+@keyframes cartel-cinta {
+  from {
+    opacity: 0;
+    transform: rotate(-12deg) scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.cartel-saliendo .cartel-cuerpo > * {
+  animation: cartel-salir 450ms ease-in both;
+}
+
+@keyframes cartel-salir {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(calc(var(--u) * -30));
+  }
+}
+
+@keyframes cartel-fundido {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* En la captura del generador todo va quieto y en su estado final. */
+.cartel-captura *,
+.cartel-captura *::before,
+.cartel-captura *::after {
+  animation: none !important;
 }
 
 /* ---------- Oferta ---------- */
@@ -440,7 +530,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: cartel-entrar 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* Solo fundido: un cartel ajeno no se desplaza ni se agranda, porque
+     moverlo o recortarlo puede tapar justo el precio. */
+  animation: cartel-fundido 620ms ease-out both;
 }
 
 .pl-imagen img {
@@ -470,4 +562,23 @@
 
 .of-sin-foto .of-off-inline {
   font-size: calc(var(--u) * 54);
+}
+
+/* Un TV está prendido muchas horas: si alguien puso "reducir movimiento" en el
+   dispositivo, respetamos y cortamos la animación. Va al final del archivo
+   porque si quedara antes, las reglas de abajo la pisarían. */
+@media (prefers-reduced-motion: reduce) {
+  .cartel-placa,
+  .of,
+  .of-foto img,
+  .of-precio,
+  .of-cinta,
+  .pl-imagen,
+  .cartel-saliendo .cartel-cuerpo > * {
+    animation: none;
+  }
+  .cartel-progreso-barra {
+    animation: none;
+    width: 100%;
+  }
 }

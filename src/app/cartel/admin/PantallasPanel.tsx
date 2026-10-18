@@ -1,11 +1,61 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Check, Copy, Monitor, Pencil, X } from "lucide-react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
-import { NAVY, SECCIONES_SUGERIDAS } from "@/lib/cartel/placas";
-import type { Pantalla } from "@/lib/cartel/types";
+import { NAVY, SECCIONES_SUGERIDAS, estadoTv, navegadorCorto } from "@/lib/cartel/placas";
+import type { Latido, Pantalla } from "@/lib/cartel/types";
+
+/** Cada cuánto el admin vuelve a mirar qué televisores están prendidos. */
+const MIRAR_LATIDOS_MS = 60 * 1000;
+
+function horaCorta(iso: string): string {
+  const d = new Date(iso);
+  const hoy = new Date();
+  const hora = new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+  if (d.toDateString() === hoy.toDateString()) return `las ${hora}`;
+  const dia = new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    day: "numeric",
+    month: "numeric",
+  }).format(d);
+  return `el ${dia} a las ${hora}`;
+}
+
+/** Punto de color y texto del estado de un televisor. */
+function EstadoTvLinea({ latido, ahora }: { latido: Latido | undefined; ahora: number }) {
+  const estado = estadoTv(latido?.visto_el, ahora);
+  const color = estado === "conectado" ? "#1E7B4D" : estado === "sin-senal" ? "#B42318" : "#94A3B8";
+  const texto =
+    estado === "conectado"
+      ? "Conectado"
+      : estado === "sin-senal"
+        ? `Sin señal desde ${horaCorta(latido!.visto_el)}`
+        : "Nunca se conectó";
+
+  return (
+    <div
+      style={{ fontSize: 12, color: "#475569", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}
+      title={latido?.navegador ?? undefined}
+      data-estado-tv={estado}
+    >
+      <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+      <span style={{ color, fontWeight: 600 }}>{texto}</span>
+      {latido && (
+        <span>
+          · {navegadorCorto(latido.navegador)}
+          {latido.ancho && latido.alto ? ` · ${latido.ancho}×${latido.alto}` : ""}
+        </span>
+      )}
+    </div>
+  );
+}
 
 /**
  * Alta y baja de televisores.
@@ -52,6 +102,36 @@ export default function PantallasPanel({
   const [editando, setEditando] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [copiado, setCopiado] = useState<string | null>(null);
+  const [latidos, setLatidos] = useState<Record<string, Latido>>({});
+  const [ahora, setAhora] = useState(() => Date.now());
+  // Hasta la primera lectura todos figuran "nunca": la marca le dice a la
+  // verificación que ya puede creerle a lo que ve.
+  const [latidosLeidos, setLatidosLeidos] = useState(false);
+
+  // Qué televisores están prendidos. Si la migración 027 no está aplicada la
+  // consulta falla y la lista sigue andando, solo que sin el estado.
+  useEffect(() => {
+    let vivo = true;
+    async function mirar() {
+      const { data, error } = await supabase
+        .from("cartel_latidos")
+        .select("pantalla_slug, visto_el, navegador, version, ancho, alto");
+      if (!vivo) return;
+      if (error) {
+        console.error("cartel/admin: no se pudieron leer los latidos:", error.message);
+      } else if (data) {
+        setLatidos(Object.fromEntries((data as Latido[]).map((l) => [l.pantalla_slug, l])));
+      }
+      setAhora(Date.now());
+      setLatidosLeidos(true);
+    }
+    mirar();
+    const id = setInterval(mirar, MIRAR_LATIDOS_MS);
+    return () => {
+      vivo = false;
+      clearInterval(id);
+    };
+  }, [supabase]);
 
   // El slug se arma solo desde el nombre mientras se da de alta. Al editar no se
   // toca: cambiarlo dejaría al televisor apuntando a una dirección que ya no
@@ -164,7 +244,7 @@ export default function PantallasPanel({
   );
 
   return (
-    <section style={tarjeta}>
+    <section style={tarjeta} data-latidos={latidosLeidos ? "leidos" : "pendientes"}>
       <h2 style={subtitulo}>
         <Monitor size={16} /> Televisores del local
       </h2>
@@ -207,6 +287,7 @@ export default function PantallasPanel({
                 /cartel/tv/{p.slug}
                 {p.seccion ? ` · ${p.seccion}` : " · todas las secciones"}
               </div>
+              {p.activa && <EstadoTvLinea latido={latidos[p.slug]} ahora={ahora} />}
             </div>
 
             <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>

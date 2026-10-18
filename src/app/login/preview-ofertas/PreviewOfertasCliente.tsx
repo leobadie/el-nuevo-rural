@@ -39,6 +39,11 @@ const PLACAS: Placa[] = [
   placa("o7", "Aceptamos todos los medios de pago", { tipo: "institucional", seccion: null, bajada: "Débito · Crédito · QR", orden: 7, unidad: null }),
 ];
 
+/** Fecha de un latido de ejemplo, relativa a cuando se abre el banco. */
+function haceMinutos(min: number): string {
+  return new Date(Date.now() - min * 60 * 1000).toISOString();
+}
+
 const PANTALLAS: Pantalla[] = [
   { slug: "carniceria-1", nombre: "Carnicería 1", seccion: "Carnicería", activa: true, orden: 1 },
   { slug: "carniceria-2", nombre: "Carnicería 2", seccion: "Carnicería", activa: true, orden: 2 },
@@ -54,6 +59,27 @@ export default function PreviewOfertasCliente({ vista }: { vista: VistaOfertas }
         cartel_pantallas: PANTALLAS.map((p) => ({ ...p })),
         cartel_placa_pantalla: [],
         flyer_config: [],
+        // Los tres estados del televisor: uno recién visto, uno caído hace una
+        // hora y "acceso" sin latido, que sale como "nunca se conectó".
+        cartel_latidos: [
+          {
+            pantalla_slug: "carniceria-1",
+            visto_el: haceMinutos(2),
+            navegador:
+              "Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36 WebAppManager",
+            version: "abc1234",
+            ancho: 1920,
+            alto: 1080,
+          },
+          {
+            pantalla_slug: "carniceria-2",
+            visto_el: haceMinutos(60),
+            navegador: "Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 Chrome/87.0.4280.88 Safari/537.36",
+            version: "abc1234",
+            ancho: 1920,
+            alto: 1080,
+          },
+        ],
       }),
     [],
   );

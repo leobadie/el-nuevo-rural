@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import PlacaVista from "./PlacaVista";
 import {
+  LATIDO_MS,
   NAVY,
+  SALIDA_MS,
   colorDePlaca,
   duracionMs,
   hoyISO,
@@ -12,6 +14,7 @@ import {
   placasParaMostrar,
 } from "@/lib/cartel/placas";
 
+import type { Rotacion } from "@/lib/cartel/placas";
 import type { Asignacion, Pantalla, Placa } from "@/lib/cartel/types";
 
 /** Azul de fondo cuando el color fuerte lo lleva la franja de sección. */
@@ -26,6 +29,8 @@ export default function CartelPantalla({
   seccion = null,
   pantalla = null,
   asignacionesIniciales = [],
+  rotar = 0,
+  version = null,
 }: {
   placasIniciales: Placa[];
   /** Con un índice, la pantalla se queda quieta en esa placa (modo captura). */
@@ -39,12 +44,22 @@ export default function CartelPantalla({
    */
   pantalla?: Pantalla | null;
   asignacionesIniciales?: Asignacion[];
+  /**
+   * Grados para girar la placa dentro de una pantalla apaisada: el navegador
+   * del TV manda la imagen acostada aunque el televisor esté montado parado.
+   */
+  rotar?: Rotacion;
+  /** Commit del deploy, para que el admin sepa qué versión tiene cargada cada TV. */
+  version?: string | null;
 }) {
   const [crudas, setCrudas] = useState<Placa[]>(placasIniciales);
   const [asignaciones, setAsignaciones] = useState<Asignacion[]>(asignacionesIniciales);
   const [hoy, setHoy] = useState(() => hoyISO());
   const [indice, setIndice] = useState(0);
   const [hora, setHora] = useState<string | null>(null);
+  // Clave de la placa que está saliendo. Se compara contra la actual en vez de
+  // guardar un booleano, así no hace falta "apagarlo" cuando entra la siguiente.
+  const [saliendoDe, setSaliendoDe] = useState<string | null>(null);
 
   const modoCaptura = indiceFijo != null;
 
@@ -61,17 +76,29 @@ export default function CartelPantalla({
   const posicion =
     placas.length > 0 ? ((modoCaptura ? indiceFijo! : indice) % placas.length + placas.length) % placas.length : 0;
   const placa = placas[posicion];
+  const clave = placa ? `${placa.id}:${posicion}` : "";
+  const saliendo = saliendoDe === clave;
 
   // ---- Rotación ----------------------------------------------------------
   // El timeout se rearma con la duración de la placa actual. Cuando la lista
   // cambia por un refresco, el índice se reinterpreta con módulo, así que no
   // hace falta resetearlo ni se corta la rotación.
+  //
+  // La placa sale un momento antes de que entre la siguiente: sin esa salida el
+  // cambio se ve como un corte seco.
+  // Con una sola placa no hay a dónde avanzar: si saliera, quedaría escondida.
+  const unica = placas.length < 2;
   useEffect(() => {
-    if (!placa || modoCaptura) return;
+    if (!placa || modoCaptura || unica) return;
 
-    const id = setTimeout(() => setIndice((i) => i + 1), duracionMs(placa));
-    return () => clearTimeout(id);
-  }, [placa, posicion, modoCaptura]);
+    const total = duracionMs(placa);
+    const salir = setTimeout(() => setSaliendoDe(clave), Math.max(total - SALIDA_MS, 0));
+    const avanzar = setTimeout(() => setIndice((i) => i + 1), total);
+    return () => {
+      clearTimeout(salir);
+      clearTimeout(avanzar);
+    };
+  }, [placa, clave, modoCaptura, unica]);
 
   // ---- Reloj -------------------------------------------------------------
   // Arranca en null y se completa al montar: si se renderizara en el servidor,
@@ -142,16 +169,51 @@ export default function CartelPantalla({
     return () => clearInterval(id);
   }, [refrescar, modoCaptura]);
 
+  // ---- Latido ------------------------------------------------------------
+  // El televisor avisa que está prendido, para que el admin muestre cuál anda
+  // y cuál no (migración 027). Si falla no pasa nada en pantalla: el aviso es
+  // para la oficina, no para el cliente que mira el TV.
+  const slugPantalla = pantalla?.slug ?? null;
+  useEffect(() => {
+    if (!slugPantalla || modoCaptura) return;
+
+    const latir = () => {
+      createClient()
+        .rpc("cartel_latido", {
+          p_slug: slugPantalla,
+          p_navegador: navigator.userAgent,
+          p_version: version ?? "",
+          p_ancho: window.innerWidth,
+          p_alto: window.innerHeight,
+        })
+        .then(({ error }) => {
+          if (error) console.error("cartel: latido fallido:", error.message);
+        });
+    };
+
+    latir();
+    const id = setInterval(latir, LATIDO_MS);
+    return () => clearInterval(id);
+  }, [slugPantalla, modoCaptura, version]);
+
   if (!placa) return null;
 
   return (
-    <div className="cartel-fondo">
+    <div className={rotar ? `cartel-fondo cartel-rotado-${rotar}` : "cartel-fondo"}>
       {/* Con sección, el color fuerte va en la franja de arriba y no en toda la
           placa: un fondo rojo a pantalla completa cansa la vista y le come
           protagonismo al precio. */}
       <div
-        className="cartel-marco"
+        className={
+          "cartel-marco" +
+          // En modo captura no hay movimiento: el generador saca una foto fija,
+          // y una animación a medias quedaría congelada en el PNG.
+          (modoCaptura ? " cartel-captura" : "") +
+          (saliendo ? " cartel-saliendo" : "")
+        }
         style={{
+          // El zoom de la foto dura lo mismo que la placa.
+          ["--dur" as string]: `${duracionMs(placa)}ms`,
           background:
             // Negro detrás de un cartel ajeno: el azul de la marca chocaría con
             // el color que traiga la imagen.

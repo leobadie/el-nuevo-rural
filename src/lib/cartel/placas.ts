@@ -325,3 +325,61 @@ export const PLACAS_DEMO: Placa[] = [
     orden: 10,
   }),
 ];
+
+/** Giros que admite la pantalla: los TVs del local se montan parados. */
+export type Rotacion = 0 | 90 | 270;
+
+/**
+ * Lee `?rotar=` de la dirección del televisor. Cualquier otra cosa es 0: un
+ * valor mal tipeado con el control remoto no puede dejar la pantalla torcida.
+ */
+export function rotacionDe(valor: string | undefined | null): Rotacion {
+  const n = Number(valor);
+  return n === 90 || n === 270 ? n : 0;
+}
+
+/** Cuánto dura la salida de una placa antes de que entre la siguiente. */
+export const SALIDA_MS = 450;
+
+/** Cada cuánto avisa el televisor que está prendido. */
+export const LATIDO_MS = 5 * 60 * 1000;
+
+/**
+ * Pasado este tiempo sin latido, el TV se da por caído. Son tres latidos
+ * perdidos: uno solo puede ser un corte de wifi de un minuto.
+ */
+export const SIN_SENAL_MS = 15 * 60 * 1000;
+
+export type EstadoTv = "conectado" | "sin-senal" | "nunca";
+
+export function estadoTv(vistoEl: string | null | undefined, ahora: number): EstadoTv {
+  if (!vistoEl) return "nunca";
+  const t = Date.parse(vistoEl);
+  if (!Number.isFinite(t)) return "nunca";
+  return ahora - t <= SIN_SENAL_MS ? "conectado" : "sin-senal";
+}
+
+/**
+ * Resume el User-Agent de un televisor en algo legible: "webOS · Chrome 87".
+ * El texto entero queda para el tooltip; esto es lo que se lee de un vistazo.
+ */
+export function navegadorCorto(ua: string | null | undefined): string {
+  if (!ua) return "navegador desconocido";
+  const so = /web0s|webos/i.test(ua)
+    ? "webOS"
+    : /tizen/i.test(ua)
+      ? "Tizen"
+      : /android/i.test(ua)
+        ? "Android"
+        : /windows/i.test(ua)
+          ? "Windows"
+          : /iphone|ipad|mac os/i.test(ua)
+            ? "Apple"
+            : /linux/i.test(ua)
+              ? "Linux"
+              : null;
+  const chrome = ua.match(/(?:Chrome|Chromium)\/(\d+)/);
+  const firefox = ua.match(/Firefox\/(\d+)/i);
+  const motor = chrome ? `Chrome ${chrome[1]}` : firefox ? `Firefox ${firefox[1]}` : null;
+  return [so, motor].filter(Boolean).join(" · ") || "navegador desconocido";
+}

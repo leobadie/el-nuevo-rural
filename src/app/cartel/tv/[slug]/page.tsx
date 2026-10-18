@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import CartelPantalla from "../../CartelPantalla";
+import { rotacionDe } from "@/lib/cartel/placas";
 import type { Asignacion, Pantalla, Placa } from "@/lib/cartel/types";
 
 // El televisor tiene que ver siempre las ofertas de ahora, nunca un HTML
@@ -19,10 +20,10 @@ export default async function CartelTvPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ fijo?: string }>;
+  searchParams: Promise<{ fijo?: string; rotar?: string }>;
 }) {
   const { slug } = await params;
-  const { fijo } = await searchParams;
+  const { fijo, rotar } = await searchParams;
 
   // ?fijo=N congela la pantalla en una placa, para que el generador de video
   // capture cada una de forma reproducible. Igual que en /cartel.
@@ -79,6 +80,10 @@ export default async function CartelTvPage({
       asignacionesIniciales={asignaciones}
       pantalla={pantalla}
       indiceFijo={indiceFijo}
+      // ?rotar=90 o 270 para los TVs montados parados (SPEC-cartel-tv-en-vivo.md).
+      rotar={rotacionDe(rotar)}
+      // Vercel lo define en cada deploy; en la compu de desarrollo no existe.
+      version={process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local"}
     />
   );
 }

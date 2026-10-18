@@ -51,3 +51,13 @@ export type Pantalla = {
 
 /** Fila de la tabla puente: esta placa va explícitamente a esta pantalla. */
 export type Asignacion = { placa_id: string; pantalla_slug: string };
+
+/** Último aviso de un televisor de que está prendido (migración 027). */
+export type Latido = {
+  pantalla_slug: string;
+  visto_el: string;
+  navegador: string | null;
+  version: string | null;
+  ancho: number | null;
+  alto: number | null;
+};

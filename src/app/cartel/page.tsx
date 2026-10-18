@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import CartelPantalla from "./CartelPantalla";
+import { rotacionDe } from "@/lib/cartel/placas";
 import type { Placa } from "@/lib/cartel/types";
 
 // El televisor tiene que ver siempre las ofertas de ahora, nunca un HTML
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function CartelPage({
   searchParams,
 }: {
-  searchParams: Promise<{ fijo?: string; seccion?: string }>;
+  searchParams: Promise<{ fijo?: string; seccion?: string; rotar?: string }>;
 }) {
   // ?fijo=N congela la pantalla en una placa concreta, sin rotar. Lo usa el
   // generador de video para capturar cada placa de forma reproducible, en vez
@@ -17,7 +18,7 @@ export default async function CartelPage({
   // ?seccion=carniceria deja en pantalla solo lo de ese sector (más lo que no
   // tiene sección, que sirve para todo el local). Es lo que permite generar un
   // archivo distinto para el TV de la carnicería y para el de la entrada.
-  const { fijo, seccion } = await searchParams;
+  const { fijo, seccion, rotar } = await searchParams;
   const indiceFijo = fijo != null && fijo !== "" && Number.isFinite(Number(fijo)) ? Number(fijo) : null;
 
   let placas: Placa[] = [];
@@ -45,6 +46,7 @@ export default async function CartelPage({
       placasIniciales={placas}
       indiceFijo={indiceFijo}
       seccion={seccion?.trim() || null}
+      rotar={rotacionDe(rotar)}
     />
   );
 }
