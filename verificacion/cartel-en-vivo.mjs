@@ -65,7 +65,19 @@ if (!executablePath) {
   process.exit(2);
 }
 
-const browser = await chromium.launch({ executablePath, headless: true });
+const lanzado = await chromium.launch({ executablePath, headless: true });
+
+// La verificación abre direcciones de televisores reales: si mandara latidos,
+// el admin mostraría "conectado" un TV que está apagado (y pisaría el latido
+// verdadero, porque hay una fila por pantalla). Se cortan en todos los contextos.
+const browser = {
+  newContext: async (opciones) => {
+    const ctx = await lanzado.newContext(opciones);
+    await ctx.route(/\/rest\/v1\/rpc\/cartel_latido/, (r) => r.abort());
+    return ctx;
+  },
+  close: () => lanzado.close(),
+};
 
 /** Abre una dirección y espera el lienzo. networkidle no resuelve con Turbopack. */
 async function abrir(page, ruta) {
