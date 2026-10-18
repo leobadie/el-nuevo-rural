@@ -126,3 +126,12 @@ que la app "haga videos por sí sola".
 23. Requiere que el usuario cree la cuenta de desarrollador, cargue saldo y pegue la
     clave en Vercel. El modelo concreto se elige probando 2 o 3 con fotos reales del
     local antes de fijarlo.
+
+## 9. Estado
+
+- **Paso 1 (guardar en el TV): hecho** el 18/10/2026, ver SPEC-cartel-tv-en-vivo.md, punto 28.
+- **Paso 2 (subir, recortar, reproducir): hecho** el 18/10/2026, commit `989f882`, migración
+  029 aplicada. Los tramos ya admiten varios clips en la base y en el TV (probado); falta la
+  interfaz para unirlos (paso 4). Se verifica con `verificar:cartel-videos` (admin en el banco,
+  TV contra la base con una pantalla apartada) y `verificar:cartel-videos-calculos`.
+  **Pendiente: probar en un Quantic real con un video filmado con el celular.**
