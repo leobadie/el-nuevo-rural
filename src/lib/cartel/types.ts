@@ -2,7 +2,25 @@
  * "imagen" es un cartel ya diseñado que se muestra tal cual, a pantalla
  * completa. Los otros tres los dibuja el sistema a partir de los datos.
  */
-export type TipoPlaca = "oferta" | "institucional" | "aviso" | "imagen";
+export type TipoPlaca = "oferta" | "institucional" | "aviso" | "imagen" | "video";
+
+/**
+ * Un tramo de video: qué archivo y entre qué segundos (SPEC-cartel-videos.md).
+ * La placa de video tiene una lista; se reproducen en orden y el archivo no se
+ * re-codifica nunca: recortar es solo cambiar `desde` y `hasta`.
+ */
+export type Clip = {
+  url: string;
+  desde: number;
+  hasta: number;
+  /** Duración del archivo entero, para el recortador. */
+  duracion: number;
+  ancho?: number | null;
+  alto?: number | null;
+  bytes?: number | null;
+  /** Lo que se detectó al subirlo: "h264", "vp9"… */
+  codec?: string | null;
+};
 
 export type Placa = {
   id: string;
@@ -28,6 +46,8 @@ export type Placa = {
   en_flyer?: boolean;
   /** Orden dentro del flyer, independiente del de rotación del TV. */
   orden_flyer?: number;
+  /** Tramos de una placa de video (migración 029). Opcional: las filas viejas no lo traen. */
+  clips?: Clip[] | null;
 };
 
 /** Lo que la pantalla necesita para dibujar; el admin maneja el resto. */

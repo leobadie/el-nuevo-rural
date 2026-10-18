@@ -92,9 +92,9 @@ async function main() {
   await page.getByPlaceholder("Asado de tira").fill("Pechito de cerdo");
   await page.getByPlaceholder("8990", { exact: true }).fill("7990");
   check("R3a", "Al cargar una oferta está la casilla «Va en el flyer»", (await t("form-en-flyer").count()) === 1);
-  await page.locator("select").first().selectOption("imagen");
+  await page.locator('select:has(option[value="imagen"])').selectOption("imagen");
   check("R7a", "Un cartel ya diseñado no tiene la casilla (no se puede dibujar en el flyer)", (await t("form-en-flyer").count()) === 0);
-  await page.locator("select").first().selectOption("oferta");
+  await page.locator('select:has(option[value="imagen"])').selectOption("oferta");
   await t("form-en-flyer").check();
   await page.getByRole("button", { name: "Crear placa" }).click();
   await pausa(400);

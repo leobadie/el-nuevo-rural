@@ -114,8 +114,9 @@ export default function CartelPantalla({
   // cambio se ve como un corte seco.
   // Con una sola placa no hay a dónde avanzar: si saliera, quedaría escondida.
   const unica = placas.length < 2;
+  const esVideo = placa?.tipo === "video";
   useEffect(() => {
-    if (!placa || modoCaptura || unica) return;
+    if (!placa || modoCaptura || unica || esVideo) return;
 
     const total = duracionMs(placa);
     const salir = setTimeout(() => setSaliendoDe(clave), Math.max(total - SALIDA_MS, 0));
@@ -124,7 +125,29 @@ export default function CartelPantalla({
       clearTimeout(salir);
       clearTimeout(avanzar);
     };
-  }, [placa, clave, modoCaptura, unica]);
+  }, [placa, clave, modoCaptura, unica, esVideo]);
+
+  // ---- Placas de video -----------------------------------------------------
+  // Avanzan cuando el video termina y no por reloj: si tarda en cargar, un
+  // reloj le cortaría el final. Con una sola placa, el video vuelve a empezar.
+  const [vuelta, setVuelta] = useState(0);
+  const terminarVideo = useCallback(() => {
+    if (unica) setVuelta((v) => v + 1);
+    else setSaliendoDe(clave);
+  }, [unica, clave]);
+
+  useEffect(() => {
+    if (!esVideo || !saliendo) return;
+    const id = setTimeout(() => setIndice((i) => i + 1), SALIDA_MS);
+    return () => clearTimeout(id);
+  }, [esVideo, saliendo]);
+
+  // Seguridad: un video trabado cargando no puede dejar el TV clavado en él.
+  useEffect(() => {
+    if (!placa || !esVideo || modoCaptura) return;
+    const id = setTimeout(terminarVideo, duracionMs(placa) * 2 + 15_000);
+    return () => clearTimeout(id);
+  }, [placa, esVideo, modoCaptura, terminarVideo, vuelta]);
 
   // ---- Reloj -------------------------------------------------------------
   // Arranca en null y se completa al montar: si se renderizara en el servidor,
@@ -360,7 +383,7 @@ export default function CartelPantalla({
           background:
             // Negro detrás de un cartel ajeno: el azul de la marca chocaría con
             // el color que traiga la imagen.
-            placa.tipo === "imagen" ? "#000" : placa.seccion ? FONDO_BASE : placa.color || NAVY,
+            placa.tipo === "imagen" || placa.tipo === "video" ? "#000" : placa.seccion ? FONDO_BASE : placa.color || NAVY,
         }}
         data-placa={placa.id}
         data-total={placas.length}
@@ -371,7 +394,8 @@ export default function CartelPantalla({
         {/* El encabezado hace de franja de sección: pintado con el color del
             sector, dice desde lejos si lo que se muestra es de carnicería o de
             verdulería. Sin sección se comporta como antes. */}
-        {placa.tipo !== "imagen" && (
+        {/* El video y el cartel ya diseñado van a pantalla completa, sin franja ni pie. */}
+        {placa.tipo !== "imagen" && placa.tipo !== "video" && (
         <header
           className="cartel-header"
           style={placa.seccion ? { background: colorDePlaca(placa) } : undefined}
@@ -414,12 +438,17 @@ export default function CartelPantalla({
         <main className="cartel-cuerpo">
           {/* La key fuerza el remontaje en cada cambio: sin eso la animación de
               entrada solo se vería la primera vez. */}
-          <PlacaVista key={`${placa.id}:${posicion}`} placa={placa} />
+          <PlacaVista
+            key={`${placa.id}:${posicion}:${vuelta}`}
+            placa={placa}
+            onFin={modoCaptura ? undefined : terminarVideo}
+            quieto={modoCaptura}
+          />
         </main>
 
         {/* El pie marca cuánto falta para la próxima placa. En el video el corte
             lo hace el propio video, así que una barra quieta solo confunde. */}
-        {!modoCaptura && placa.tipo !== "imagen" && (
+        {!modoCaptura && placa.tipo !== "imagen" && placa.tipo !== "video" && (
         <footer className="cartel-pie">
           <div className="cartel-progreso">
             <div

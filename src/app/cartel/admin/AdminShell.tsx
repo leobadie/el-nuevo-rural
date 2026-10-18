@@ -19,6 +19,8 @@ import { useConfirmDialog } from "@/app/useConfirmDialog";
 import PlacaVista from "../PlacaVista";
 import PantallasPanel from "./PantallasPanel";
 import FlyerTab, { type AccionesFlyer } from "./FlyerTab";
+import VideoEditor from "./VideoEditor";
+import { duracionClips } from "@/lib/cartel/video";
 import { puedeIrAlFlyer, siguienteOrdenFlyer, type ConfigFlyer } from "@/lib/ofertas/flyer";
 import {
   NARANJA,
@@ -29,7 +31,7 @@ import {
   hoyISO,
   estaVigente,
 } from "@/lib/cartel/placas";
-import type { Asignacion, Pantalla, Placa, TipoPlaca } from "@/lib/cartel/types";
+import type { Asignacion, Clip, Pantalla, Placa, TipoPlaca } from "@/lib/cartel/types";
 
 const COLORES = [
   { nombre: "Azul (marca)", valor: NAVY },
@@ -58,6 +60,8 @@ type Form = {
   pantallas: string[];
   /** Va también al flyer (SPEC-ofertas.md). Sólo las ofertas con precio. */
   en_flyer: boolean;
+  /** Tramos de la placa de video (SPEC-cartel-videos.md). */
+  clips: Clip[];
 };
 
 const FORM_VACIO: Form = {
@@ -77,6 +81,7 @@ const FORM_VACIO: Form = {
   activa: true,
   pantallas: [],
   en_flyer: false,
+  clips: [],
 };
 
 /** "1.234,50" y "1234.50" tienen que valer lo mismo: acá se carga a mano y rápido. */
@@ -105,6 +110,7 @@ function formDesde(placa: Placa, asignaciones: Asignacion[]): Form {
     orden: String(placa.orden),
     activa: placa.activa,
     en_flyer: !!placa.en_flyer,
+    clips: placa.clips ?? [],
   };
 }
 
@@ -173,7 +179,9 @@ export default function AdminShell({
     duracion_seg: Number(form.duracion_seg) || 8,
     orden: Number(form.orden) || 0,
     activa: form.activa,
+    clips: form.tipo === "video" ? form.clips : null,
   };
+  const esVideo = form.tipo === "video";
 
   function limpiar() {
     setEditando(null);
@@ -195,6 +203,10 @@ export default function AdminShell({
       setError("Un cartel ya diseñado es la imagen: sin foto la pantalla queda en negro.");
       return;
     }
+    if (form.tipo === "video" && form.clips.length === 0) {
+      setError("Subí el video: una placa de video sin video sería una pantalla en negro.");
+      return;
+    }
     if (form.vigencia_desde && form.vigencia_hasta && form.vigencia_hasta < form.vigencia_desde) {
       setError("La vigencia termina antes de empezar: la placa no se vería nunca.");
       return;
@@ -212,9 +224,16 @@ export default function AdminShell({
       color: form.color || null,
       vigencia_desde: form.vigencia_desde || null,
       vigencia_hasta: form.vigencia_hasta || null,
-      duracion_seg: Number(form.duracion_seg) || 8,
+      // Un video dura lo que su recorte; duracion_seg no se usa, pero la base
+      // lo exige entre 3 y 60.
+      duracion_seg: form.tipo === "video"
+        ? Math.min(Math.max(Math.ceil(duracionClips(form.clips)), 3), 60)
+        : Number(form.duracion_seg) || 8,
       orden: Number(form.orden) || 0,
       activa: form.activa,
+      // Solo los videos mandan clips: así el resto se sigue guardando aunque la
+      // migración 029 no esté aplicada.
+      ...(form.tipo === "video" ? { clips: form.clips } : {}),
       // Sin la 023 la columna no existe y mandarla haría fallar el guardado entero.
       ...(faltaMigracionFlyer ? {} : datosFlyer()),
     };
@@ -559,7 +578,10 @@ export default function AdminShell({
                       <div style={{ fontSize: 11, color: "#777", marginTop: 2 }}>
                         {p.seccion ? `${p.seccion} · ${p.tipo}` : `${p.tipo} · todas las pantallas`}
                         {p.precio != null && ` · ${fmtPrecio(p.precio)}`}
-                        {` · ${p.duracion_seg}s`}
+                        {/* Un video dura su recorte, no los segundos fijos. */}
+                        {p.tipo === "video"
+                          ? ` · ${Math.round(duracionClips(p.clips) * 10) / 10}s`
+                          : ` · ${p.duracion_seg}s`}
                         {p.en_flyer && puedeIrAlFlyer(p) && " · en el flyer"}
                         {!p.activa && " · apagada"}
                         {p.activa && !vigente && " · fuera de vigencia"}
@@ -618,6 +640,7 @@ export default function AdminShell({
                   <select value={form.tipo} onChange={(e) => set("tipo", e.target.value as TipoPlaca)} style={input}>
                     <option value="oferta">Oferta con precio</option>
                     <option value="imagen">Cartel ya diseñado (imagen sola)</option>
+                    <option value="video">Video</option>
                     <option value="institucional">Institucional</option>
                     <option value="aviso">Aviso</option>
                   </select>
@@ -687,15 +710,24 @@ export default function AdminShell({
                   </Campo>
                 )}
 
-                <Campo etiqueta={form.tipo === "oferta" ? "Producto" : "Título"}>
+                <Campo etiqueta={form.tipo === "oferta" ? "Producto" : esVideo ? "Nombre del video (para reconocerlo en la lista)" : "Título"}>
                   <input
                     value={form.titulo}
                     onChange={(e) => set("titulo", e.target.value)}
-                    placeholder={form.tipo === "oferta" ? "Asado de tira" : "Aceptamos todos los medios de pago"}
+                    placeholder={
+                      form.tipo === "oferta" ? "Asado de tira" : esVideo ? "Video de la parrilla" : "Aceptamos todos los medios de pago"
+                    }
                     style={input}
                   />
                 </Campo>
 
+                {esVideo && (
+                  <Campo etiqueta="Video">
+                    <VideoEditor clips={form.clips} onChange={(c) => set("clips", c)} supabase={supabase} onError={setError} />
+                  </Campo>
+                )}
+
+                {!esVideo && (
                 <Campo etiqueta={form.tipo === "oferta" ? "Sección o detalle" : "Bajada"}>
                   <input
                     value={form.bajada}
@@ -704,6 +736,7 @@ export default function AdminShell({
                     style={input}
                   />
                 </Campo>
+                )}
 
                 {form.tipo === "oferta" && (
                   <>
@@ -738,6 +771,8 @@ export default function AdminShell({
                   </>
                 )}
 
+                {!esVideo && (
+                <>
                 <Campo etiqueta="Color de fondo">
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {COLORES.map((c) => (
@@ -783,6 +818,8 @@ export default function AdminShell({
                     </button>
                   )}
                 </Campo>
+                </>
+                )}
 
                 <div style={{ display: "flex", gap: 10 }}>
                   <Campo etiqueta="Desde (opcional)">
@@ -804,6 +841,7 @@ export default function AdminShell({
                 </div>
 
                 <div style={{ display: "flex", gap: 10 }}>
+                  {!esVideo && (
                   <Campo etiqueta="Segundos en pantalla">
                     <input
                       type="number"
@@ -814,6 +852,7 @@ export default function AdminShell({
                       style={input}
                     />
                   </Campo>
+                  )}
                   <Campo etiqueta="Orden">
                     <input
                       type="number"
@@ -859,12 +898,13 @@ export default function AdminShell({
                   style={
                     {
                       "--u": "0.24px",
-                      background: previa.color || NAVY,
+                      background: esVideo ? "#000" : previa.color || NAVY,
                       borderRadius: 10,
                       boxShadow: "0 4px 18px rgba(0,0,0,0.25)",
                     } as CSSProperties
                   }
                 >
+                  {!esVideo && (
                   <header className="cartel-header">
                     <div className="cartel-marca">
                       {/* eslint-disable-next-line @next/next/no-img-element -- igual que en la pantalla */}
@@ -877,14 +917,17 @@ export default function AdminShell({
                     </div>
                     <span className="cartel-hora">--:--</span>
                   </header>
+                  )}
                   <main className="cartel-cuerpo">
                     <PlacaVista placa={previa} />
                   </main>
+                  {!esVideo && (
                   <footer className="cartel-pie">
                     <div className="cartel-progreso">
                       <div className="cartel-progreso-barra" style={{ animation: "none", width: "42%" }} />
                     </div>
                   </footer>
+                  )}
                 </div>
               </div>
             </div>

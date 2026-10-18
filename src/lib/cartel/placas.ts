@@ -208,6 +208,12 @@ export function porcentajeAhorro(placa: Placa): number | null {
 
 /** Cuánto dura la placa en pantalla, en milisegundos. */
 export function duracionMs(placa: Placa): number {
+  // Un video dura lo que suman sus tramos (SPEC-cartel-videos.md, punto 10), no
+  // los segundos fijos de las placas. El tope de 5 minutos es solo de seguridad.
+  if (placa.tipo === "video" && placa.clips?.length) {
+    const total = placa.clips.reduce((t, c) => t + Math.max(0, c.hasta - c.desde), 0);
+    return Math.min(Math.max(total, 1), 300) * 1000;
+  }
   const seg = Number.isFinite(placa.duracion_seg) ? placa.duracion_seg : 8;
   return Math.min(Math.max(seg, 3), 60) * 1000;
 }

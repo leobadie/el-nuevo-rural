@@ -24,6 +24,8 @@
     "verificar:cartel-en-vivo": "node verificacion/cartel-en-vivo.mjs",
     "verificar:cartel-latidos-calculos": "node verificacion/cartel-latidos-calculos.mts",
     "verificar:cartel-sin-internet": "node verificacion/cartel-sin-internet.mjs",
+    "verificar:cartel-videos-calculos": "node verificacion/cartel-videos-calculos.mts",
+    "verificar:cartel-videos": "node verificacion/cartel-videos.mjs",
     "verificar:fechas": "node verificacion/fechas.mts",
     "verificar:municipalidad-calculos": "node verificacion/municipalidad-calculos.mts",
     "verificar:municipalidad": "node verificacion/municipalidad.mjs",

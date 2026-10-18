@@ -1,5 +1,6 @@
 import { fmtPrecio, porcentajeAhorro, textoVigencia } from "@/lib/cartel/placas";
 import type { Placa } from "@/lib/cartel/types";
+import PlacaVideo from "./PlacaVideo";
 
 /**
  * El cuerpo de una placa tal como se ve en el televisor.
@@ -8,7 +9,18 @@ import type { Placa } from "@/lib/cartel/types";
  * lo mismo que se va a proyectar, en vez de una maqueta parecida que se
  * despegue del original con el tiempo.
  */
-export default function PlacaVista({ placa }: { placa: Placa }) {
+export default function PlacaVista({
+  placa,
+  onFin,
+  quieto,
+}: {
+  placa: Placa;
+  /** Solo video: el TV avanza cuando el video termina, no por reloj. */
+  onFin?: () => void;
+  /** Solo video: modo captura, congelado en el primer cuadro. */
+  quieto?: boolean;
+}) {
+  if (placa.tipo === "video") return <PlacaVideo placa={placa} onFin={onFin} quieto={quieto} />;
   if (placa.tipo === "imagen") return <PlacaImagen placa={placa} />;
   if (placa.tipo === "oferta") return <PlacaOferta placa={placa} />;
   return <PlacaMensaje placa={placa} />;
