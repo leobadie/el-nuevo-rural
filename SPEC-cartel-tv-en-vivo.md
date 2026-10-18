@@ -136,3 +136,8 @@ pantalla completa. Aparecieron tres cosas, que se suman al alcance:
     y Acceso. Los "Embutidos 1-5" que venían de cdenet se renombraron (dirección incluida)
     antes de que ningún TV las tuviera cargadas. cdenet ya no los muestra: cada TV queda
     identificado por la dirección que se le carga.
+28. **Hecho (18/10/2026): puntos 10-13.** `public/cartel-sw.js`, con scope `/cartel/tv/`.
+    Página y lecturas de Supabase: red primero (8 s) y respaldo guardado. Código, fotos,
+    videos y logo: lo guardado primero, con soporte de pedidos por partes (Range) para que
+    los videos tampoco se vuelvan a bajar. Se verifica con `verificar:cartel-sin-internet`
+    contra la versión compilada (en `npm run dev` no aplica).

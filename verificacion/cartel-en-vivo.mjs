@@ -297,7 +297,9 @@ try {
       // Se adelanta el reloj y se hace creer al TV que el servidor ya tiene otra versión.
       await ctx.clock.install();
       await abrir(t, "/cartel/tv/acceso");
-      await t.route(/\/cartel\/tv\/acceso$/, async (route) => {
+      // En el contexto y no en la página: el pedido lo hace el service worker,
+      // y una intercepción de página no lo ve.
+      await ctx.route(/\/cartel\/tv\/acceso$/, async (route) => {
         const resp = await route.fetch();
         const html = (await resp.text()).replace(/data-version="[^"]+"/, 'data-version="zz-nueva"');
         await route.fulfill({ response: resp, body: html });
@@ -307,7 +309,7 @@ try {
       ok(await recarga, "con una versión nueva publicada, la página se recarga sola", `tenía ${version}`);
       // Soltar todas: la página recargada sigue pidiendo y una intercepción viva
       // revienta al cerrar el contexto.
-      await t.unrouteAll({ behavior: "ignoreErrors" });
+      await ctx.unrouteAll({ behavior: "ignoreErrors" });
     }
     await ctx.close();
   }

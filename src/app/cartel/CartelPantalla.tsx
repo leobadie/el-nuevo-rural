@@ -263,6 +263,38 @@ export default function CartelPantalla({
     };
   }, [modoCaptura]);
 
+  // ---- Guardado en el TV ---------------------------------------------------
+  // El service worker guarda la página, las ofertas y las fotos para que el TV
+  // arranque aunque se prenda sin internet, y para que cada foto o video se
+  // baje una sola vez (public/cartel-sw.js). Lo que la página ya cargó antes de
+  // que existiera se le pasa para que lo guarde también.
+  useEffect(() => {
+    if (!slugPantalla || modoCaptura || !("serviceWorker" in navigator)) return;
+
+    const sw = navigator.serviceWorker;
+    // En la primera visita el aviso puede llegar mientras el service worker
+    // todavía se está activando, y ahí se pierde. Se manda al estar listo, al
+    // tomar el control y una vez más a los 10 s; guardar dos veces no cuesta nada.
+    const precargar = () => {
+      const destino = sw.controller;
+      if (!destino) return;
+      const urls = [window.location.href, ...performance.getEntriesByType("resource").map((e) => e.name)];
+      destino.postMessage({ tipo: "precargar", urls });
+    };
+
+    sw.addEventListener("controllerchange", precargar);
+    const otraVez = window.setTimeout(precargar, 10_000);
+    sw.register("/cartel-sw.js", { scope: "/cartel/tv/", updateViaCache: "none" })
+      .then(() => sw.ready)
+      .then(precargar)
+      .catch((e) => console.error("cartel: no se pudo registrar el guardado:", e));
+
+    return () => {
+      sw.removeEventListener("controllerchange", precargar);
+      window.clearTimeout(otraVez);
+    };
+  }, [slugPantalla, modoCaptura]);
+
   // ---- Pantalla completa -------------------------------------------------
   // La barra del navegador del TV tapa el borde de la placa (se comía la última
   // cifra del precio). El navegador solo deja pasar a pantalla completa después

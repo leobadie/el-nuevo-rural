@@ -12,8 +12,11 @@ const PUBLIC_PATHS = ["/login"];
  * nadie que escriba una contraseña, así que tiene que abrir sin sesión. Va por
  * igualdad exacta y no por prefijo a propósito, porque `/cartel/admin` —donde se
  * cargan y borran las placas— tiene que seguir pidiendo login.
+ *
+ * `/cartel-sw.js` es el service worker que guarda las ofertas en el televisor
+ * para que arranque sin internet. Lo pide el TV sin sesión.
  */
-const PUBLIC_EXACT_PATHS = ["/cartel"];
+const PUBLIC_EXACT_PATHS = ["/cartel", "/cartel-sw.js"];
 
 /**
  * La pantalla de un televisor concreto: /cartel/tv/carniceria-1
