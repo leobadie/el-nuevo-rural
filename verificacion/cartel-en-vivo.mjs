@@ -104,11 +104,33 @@ try {
   const tv = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const p = await tv.newPage();
 
+  // Pasillo y Acceso son horizontales y no van girados: diseño apaisado.
   await abrir(p, "/cartel/tv/acceso?fijo=0");
   let c = await caja(p);
-  ok(c.h > c.w, "sin ?rotar el lienzo es vertical (como hoy)", `${Math.round(c.w)}x${Math.round(c.h)}`);
-  ok(Math.abs(c.h - 1080) < 2, "sin ?rotar ocupa todo el alto", `alto ${Math.round(c.h)}`);
-  await p.screenshot({ path: path.join(SALIDA, "tv-1920x1080-sin-rotar.png") });
+  ok(
+    Math.abs(c.w - 1920) < 2 && Math.abs(c.h - 1080) < 2,
+    "TV horizontal sin giro: diseño apaisado a pantalla completa",
+    `${Math.round(c.w)}x${Math.round(c.h)}`,
+  );
+  const desbordes = await p.evaluate(() => {
+    const r = document.querySelector(".cartel-marco").getBoundingClientRect();
+    return [...document.querySelectorAll(".cartel-marco *")]
+      .filter((el) => {
+        const q = el.getBoundingClientRect();
+        return q.width > 0 && (q.right > r.right + 1 || q.left < r.left - 1 || q.bottom > r.bottom + 1);
+      })
+      .map((el) => el.className);
+  });
+  ok(desbordes.length === 0, "en apaisado nada se sale de la pantalla", desbordes.join(", "));
+  await p.screenshot({ path: path.join(SALIDA, "tv-1920x1080-apaisado.png") });
+
+  // En un TV vertical (o un celular) sigue la placa vertical de siempre.
+  const parado = await browser.newContext({ viewport: { width: 1080, height: 1920 } });
+  const pv = await parado.newPage();
+  await abrir(pv, "/cartel/tv/acceso?fijo=0");
+  c = await caja(pv);
+  ok(Math.abs(c.w - 1080) < 2 && Math.abs(c.h - 1920) < 2, "pantalla vertical: la placa vertical de siempre", `${Math.round(c.w)}x${Math.round(c.h)}`);
+  await parado.close();
 
   for (const grados of [90, 270]) {
     await abrir(p, `/cartel/tv/acceso?fijo=0&rotar=${grados}`);
@@ -136,7 +158,11 @@ try {
 
   await abrir(p, "/cartel/tv/acceso?fijo=0&rotar=45");
   c = await caja(p);
-  ok(c.h > c.w, "un ?rotar inválido se ignora y no tuerce la pantalla", `${Math.round(c.w)}x${Math.round(c.h)}`);
+  ok(
+    Math.abs(c.w - 1920) < 2 && !(await p.$("[class*=cartel-rotado]")),
+    "un ?rotar inválido se ignora y no tuerce la pantalla",
+    `${Math.round(c.w)}x${Math.round(c.h)}`,
+  );
 
   // ---- 14-17. Movimiento ------------------------------------------------
   // /cartel muestra todas las placas vigentes: se recorren para encontrar una
@@ -346,6 +372,17 @@ try {
     );
     ok(/webOS · Chrome 87/.test(de("Conectado")[1] ?? ""), `${nombre}: muestra el navegador del TV`, de("Conectado")[1]);
     ok(/Sin señal desde las \d\d:\d\d/.test(de("Sin señal")[1] ?? ""), `${nombre}: dice desde qué hora no hay señal`, de("Sin señal")[1]);
+    // La vista previa de una placa no tiene que pasarse al diseño apaisado
+    // aunque la ventana del admin sea ancha: muestra lo que ve un TV vertical.
+    // La pestaña dice "Ofertas (N)": "text=Ofertas" pegaba en el título de la página.
+    await a.click('button:has-text("Ofertas (")').catch(() => {});
+    const previa = await a.locator(".cartel-marco:visible").first().evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { w: r.width, h: r.height };
+    }).catch(() => null);
+    if (previa) ok(previa.h > previa.w, `${nombre}: la vista previa del admin sigue vertical`, `${Math.round(previa.w)}x${Math.round(previa.h)}`);
+    else skip(`${nombre}: vista previa del admin`, "no se encontró la previa en la pestaña Ofertas");
+    await a.click('button:has-text("Televisores")').catch(() => {});
     const ancho = await a.evaluate(() => document.documentElement.scrollWidth);
     ok(ancho <= viewport.width, `${nombre}: sin scroll horizontal`, `${ancho}px`);
     await a.screenshot({ path: path.join(SALIDA, `admin-televisores-${nombre}.png`), fullPage: true });

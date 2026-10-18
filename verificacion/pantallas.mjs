@@ -72,7 +72,7 @@ const { data: creadas, error: eIns } = await admin
   .from("cartel_placas")
   .insert([
     { titulo: `${MARCA} corte`, seccion: "Carnicería", tipo: "oferta", precio: 1, duracion_seg: 3, orden: 9001, activa: true },
-    { titulo: `${MARCA} chorizo`, seccion: "Embutidos", tipo: "oferta", precio: 2, duracion_seg: 3, orden: 9002, activa: true },
+    { titulo: `${MARCA} chorizo`, seccion: "Pollería", tipo: "oferta", precio: 2, duracion_seg: 3, orden: 9002, activa: true },
     { titulo: `${MARCA} general`, seccion: null, tipo: "aviso", duracion_seg: 3, orden: 9003, activa: true },
   ])
   .select();
@@ -102,6 +102,9 @@ const browser = await chromium.launch({ executablePath, headless: true });
  */
 async function placasDe(slug) {
   const page = await browser.newPage({ viewport: { width: 540, height: 960 } });
+  // Abre direcciones de televisores reales: sin esto mandaría latidos y el admin
+  // mostraría "conectado" un TV apagado.
+  await page.route("**/rest/v1/rpc/cartel_latido", (r) => r.abort());
   try {
     await page.goto(`${BASE}/cartel/tv/${slug}`, { waitUntil: "networkidle" });
     const total = Number(await page.getAttribute("[data-total]", "data-total"));
@@ -121,14 +124,14 @@ const tiene = (lista, texto) => lista.some((x) => x.includes(texto));
 try {
   console.log("=== R6/R8 — Sin asignación explícita manda la sección de la pantalla ===");
   const carni = await placasDe("carniceria-1");
-  const embu = await placasDe("embutidos-2");
+  const embu = await placasDe("polleria-2");
   const acceso = await placasDe("acceso");
 
   ok(tiene(carni, `${MARCA} corte`), "carniceria-1 ve el corte de carnicería");
-  ok(!tiene(carni, `${MARCA} chorizo`), "carniceria-1 NO ve el chorizo de embutidos");
+  ok(!tiene(carni, `${MARCA} chorizo`), "carniceria-1 NO ve el chorizo de pollería");
   ok(tiene(carni, `${MARCA} general`), "carniceria-1 ve el aviso sin sección (sirve a todo el local)");
-  ok(tiene(embu, `${MARCA} chorizo`), "embutidos-2 ve el chorizo");
-  ok(!tiene(embu, `${MARCA} corte`), "embutidos-2 NO ve el corte de carnicería");
+  ok(tiene(embu, `${MARCA} chorizo`), "polleria-2 ve el chorizo");
+  ok(!tiene(embu, `${MARCA} corte`), "polleria-2 NO ve el corte de carnicería");
   ok(
     tiene(acceso, `${MARCA} corte`) && tiene(acceso, `${MARCA} chorizo`),
     "acceso, que no tiene sección, ve las dos",
@@ -147,17 +150,23 @@ try {
 
   console.log("\n=== R13 — Un slug inexistente es 404, no la pantalla genérica ===");
   const page = await browser.newPage();
+  // Abre direcciones de televisores reales: sin esto mandaría latidos y el admin
+  // mostraría "conectado" un TV apagado.
+  await page.route("**/rest/v1/rpc/cartel_latido", (r) => r.abort());
   const r = await page.goto(`${BASE}/cartel/tv/no-existe-${Date.now()}`, {
     waitUntil: "domcontentloaded",
   });
   ok(r.status() === 404, "un televisor mal tipeado devuelve 404", `devolvió ${r.status()}`);
   await page.close();
 } finally {
-  await browser.close();
+  // Primero la base y después el navegador: en esta máquina el cierre de Edge
+  // tarda minutos, y si la corrida se corta ahí las placas de prueba quedaban
+  // activas y a la vista de los televisores.
   await limpiar();
   const { data: resto } = await admin.from("cartel_placas").select("titulo").like("titulo", `${MARCA}%`);
   console.log(`\nlimpieza: quedaron ${resto?.length ?? "?"} placa(s) de prueba`);
 }
 
 console.log(`\n${fallos === 0 ? "TODO OK" : `${fallos} CHECK(S) FALLARON`}`);
+await browser.close();
 process.exit(fallos === 0 ? 0 : 1);

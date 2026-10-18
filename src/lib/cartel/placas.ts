@@ -15,6 +15,8 @@ export const COLOR_POR_SECCION: Record<string, string> = {
   carniceria: "#A62C2C",
   embutidos: "#B4541F",
   fiambreria: "#B4541F",
+  // Ámbar oscuro: el amarillo de pollería, pero con contraste para el texto blanco.
+  polleria: "#A16207",
   verduleria: VERDE,
   fruteria: VERDE,
   almacen: NAVY,
@@ -28,6 +30,8 @@ export const COLOR_POR_SECCION: Record<string, string> = {
 /** Sugerencias que ofrece el admin; no limitan lo que se puede escribir. */
 export const SECCIONES_SUGERIDAS = [
   "Carnicería",
+  "Pollería",
+  "Fiambrería",
   "Embutidos",
   "Verdulería",
   "Almacén",

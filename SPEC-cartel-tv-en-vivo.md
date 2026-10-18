@@ -127,3 +127,12 @@ pantalla completa. Aparecieron tres cosas, que se suman al alcance:
     ir al local a cambiar la dirección. `?rotar=` en la dirección sigue teniendo prioridad.
 25. **Se actualiza sola** (adelanto del punto 12): cada 10 minutos la página pide su propia
     dirección y, si el servidor tiene otra versión, se recarga. Sin internet no recarga.
+26. **Dos TVs son horizontales** (Pasillo y Acceso, de otra marca; los 8 Quantic están
+    parados). Un TV horizontal sin giro usa un **diseño apaisado** de 1920x1080: la foto a
+    la izquierda y el precio a la derecha, y sin foto el precio ocupa todo el ancho. Se
+    activa por la forma de la pantalla y solo en la del televisor: la vista previa del
+    admin sigue vertical.
+27. **Los televisores del local** son Carnicería 1-3, Pollería 1-3, Fiambrería 1-2, Pasillo
+    y Acceso. Los "Embutidos 1-5" que venían de cdenet se renombraron (dirección incluida)
+    antes de que ningún TV las tuviera cargadas. cdenet ya no los muestra: cada TV queda
+    identificado por la dirección que se le carga.
