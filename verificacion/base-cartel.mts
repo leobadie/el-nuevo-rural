@@ -290,6 +290,29 @@ try {
     ok((huerfano?.length ?? 0) === 0, "Borrar la pantalla se lleva su latido", `${huerfano?.length ?? 0} fila(s)`);
   }
 
+  console.log("\n=== Giro de cada televisor (028, SPEC-cartel-tv-en-vivo.md) ===");
+  const { error: sin028 } = await admin.from("cartel_pantallas").select("rotacion").limit(1);
+  if (sin028) {
+    ok(false, "Existe cartel_pantallas.rotacion: falta aplicar supabase/028_cartel_pantallas_rotacion.sql", sin028.message);
+  } else {
+    const g = `${SLUG_PRUEBA}-giro`;
+    const { data: nueva, error: eNueva } = await admin
+      .from("cartel_pantallas").insert({ slug: g, nombre: `${MARCA} giro` }).select("rotacion").single();
+    ok(!eNueva && nueva?.rotacion === 0, "Una pantalla nueva arranca derecha (rotacion = 0)", eNueva?.message ?? JSON.stringify(nueva));
+    for (const valido of [90, 270, 0]) {
+      const { error } = await admin.from("cartel_pantallas").update({ rotacion: valido }).eq("slug", g);
+      ok(!error, `Acepta rotacion = ${valido}`, error?.message);
+    }
+    // Las combinaciones inválidas, incluido NULL: un CHECK que da NULL deja pasar la fila.
+    for (const invalido of [45, 180, -90, 360, null]) {
+      const { error } = await admin.from("cartel_pantallas").update({ rotacion: invalido }).eq("slug", g);
+      ok(!!error, `Rechaza rotacion = ${invalido}`, error?.message ?? "¡LO ACEPTÓ!");
+    }
+    const { data: anonVe } = await anon.from("cartel_pantallas").select("rotacion").eq("slug", g).maybeSingle();
+    ok(anonVe?.rotacion === 0, "El televisor (sin sesión) lee el giro de su pantalla", JSON.stringify(anonVe));
+    await admin.from("cartel_pantallas").delete().eq("slug", g);
+  }
+
   console.log("\n=== Ofertas y flyer en un solo módulo (023, SPEC-ofertas.md) ===");
   const { error: sin023 } = await admin.from("flyer_config").select("id").limit(1);
   if (sin023) {
