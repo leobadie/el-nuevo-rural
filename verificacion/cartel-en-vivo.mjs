@@ -218,7 +218,16 @@ try {
   ]) {
     const ctx = await browser.newContext({ viewport });
     const a = await ctx.newPage();
-    await a.goto(`${BASE}/login/preview-ofertas?vista=televisores`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    const resp = await a.goto(`${BASE}/login/preview-ofertas?vista=televisores`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60_000,
+    });
+    // El banco solo existe en desarrollo: contra producción da 404 a propósito.
+    if (resp?.status() === 404) {
+      skip(`${nombre}: estado de los televisores en el admin`, "el banco de pruebas no existe en producción");
+      await ctx.close();
+      continue;
+    }
     // Hasta que el panel lee los latidos todos figuran "nunca".
     await a.waitForSelector('[data-latidos="leidos"] [data-estado-tv]', { timeout: 30_000 });
     const estados = await a.$$eval("[data-estado-tv]", (els) => els.map((el) => [el.dataset.estadoTv, el.textContent]));
