@@ -267,7 +267,9 @@ try {
       const recarga = t.waitForEvent("load", { timeout: 30_000 }).then(() => true).catch(() => false);
       await ctx.clock.fastForward("10:30");
       ok(await recarga, "con una versión nueva publicada, la página se recarga sola", `tenía ${version}`);
-      await t.unroute(/\/cartel\/tv\/acceso$/);
+      // Soltar todas: la página recargada sigue pidiendo y una intercepción viva
+      // revienta al cerrar el contexto.
+      await t.unrouteAll({ behavior: "ignoreErrors" });
     }
     await ctx.close();
   }
