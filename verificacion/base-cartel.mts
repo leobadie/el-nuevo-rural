@@ -234,6 +234,62 @@ try {
     }
   }
 
+  console.log("\n=== Latidos de los televisores (027, SPEC-cartel-tv-en-vivo.md) ===");
+  const { error: sin027 } = await admin.from("cartel_latidos").select("pantalla_slug").limit(1);
+  if (sin027) {
+    ok(false, "Existe cartel_latidos: falta aplicar supabase/027_cartel_latidos.sql", sin027.message);
+  } else {
+    // Pantallas propias: los latidos de prueba no pueden caer en un televisor real.
+    const lOn = `${SLUG_PRUEBA}-lat-on`;
+    const lOff = `${SLUG_PRUEBA}-lat-off`;
+    const { error: ePant } = await admin.from("cartel_pantallas").insert([
+      { slug: lOn, nombre: `${MARCA} lat on`, activa: true, orden: 9101 },
+      { slug: lOff, nombre: `${MARCA} lat off`, activa: false, orden: 9102 },
+    ]);
+    ok(!ePant, "se pudieron crear las pantallas de prueba", ePant?.message);
+
+    const latido = (slug: string) =>
+      anon.rpc("cartel_latido", { p_slug: slug, p_navegador: `${MARCA} Web0S Chrome/87`, p_version: "prueba", p_ancho: 1920, p_alto: 1080 });
+
+    const { error: eLat } = await latido(lOn);
+    ok(!eLat, "El televisor (sin sesión) puede avisar que está prendido", eLat?.message);
+    const { data: fila } = await admin.from("cartel_latidos").select("*").eq("pantalla_slug", lOn).maybeSingle();
+    ok(!!fila && fila.ancho === 1920 && fila.alto === 1080 && fila.version === "prueba", "…y queda guardado con navegador y tamaño", JSON.stringify(fila));
+
+    const primero = fila?.visto_el;
+    await latido(lOn);
+    const { data: filas2 } = await admin.from("cartel_latidos").select("visto_el").eq("pantalla_slug", lOn);
+    ok((filas2?.length ?? 0) === 1 && filas2![0].visto_el >= primero, "Un segundo latido actualiza la misma fila, no agrega otra", `${filas2?.length} fila(s)`);
+
+    await latido(lOff);
+    await latido(`${SLUG_PRUEBA}-inventada`);
+    const { data: basura } = await admin
+      .from("cartel_latidos").select("pantalla_slug").in("pantalla_slug", [lOff, `${SLUG_PRUEBA}-inventada`]);
+    ok((basura?.length ?? 0) === 0, "Una pantalla apagada o inventada no deja latido", `${basura?.length ?? 0} fila(s)`);
+
+    const { data: leidosAnon } = await anon.from("cartel_latidos").select("*");
+    ok((leidosAnon ?? []).length === 0, "Sin sesión no se leen los latidos", `${leidosAnon?.length ?? 0} fila(s)`);
+    const { error: eInsAnon } = await anon
+      .from("cartel_latidos").insert({ pantalla_slug: lOn, navegador: MARCA });
+    ok(!!eInsAnon, "…ni se escriben directo en la tabla", eInsAnon?.message ?? "¡ENTRÓ! revisá las políticas");
+    const { error: eUpdAnon, data: updAnon } = await anon
+      .from("cartel_latidos").update({ navegador: "pisado" }).eq("pantalla_slug", lOn).select();
+    ok(!!eUpdAnon || (updAnon?.length ?? 0) === 0, "…ni se pisan", eUpdAnon?.message ?? `${updAnon?.length} fila(s)`);
+
+    const largo = "x".repeat(5000);
+    await anon.rpc("cartel_latido", { p_slug: lOn, p_navegador: largo, p_version: largo, p_ancho: 999999, p_alto: -5 });
+    const { data: recortado } = await admin.from("cartel_latidos").select("navegador, version, ancho, alto").eq("pantalla_slug", lOn).single();
+    ok(
+      recortado?.navegador?.length === 300 && recortado?.version?.length === 40 && recortado?.ancho === null && recortado?.alto === null,
+      "Textos larguísimos se recortan y tamaños absurdos quedan vacíos",
+      `${recortado?.navegador?.length}/${recortado?.version?.length}/${recortado?.ancho}/${recortado?.alto}`,
+    );
+
+    await admin.from("cartel_pantallas").delete().eq("slug", lOn);
+    const { data: huerfano } = await admin.from("cartel_latidos").select("pantalla_slug").eq("pantalla_slug", lOn);
+    ok((huerfano?.length ?? 0) === 0, "Borrar la pantalla se lleva su latido", `${huerfano?.length ?? 0} fila(s)`);
+  }
+
   console.log("\n=== Ofertas y flyer en un solo módulo (023, SPEC-ofertas.md) ===");
   const { error: sin023 } = await admin.from("flyer_config").select("id").limit(1);
   if (sin023) {
