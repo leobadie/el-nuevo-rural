@@ -90,5 +90,26 @@ igual(p.duracionMs({ tipo: "video", clips: [c(0, 0.2)], duracion_seg: 8 }), 1000
 igual(p.duracionMs({ tipo: "video", clips: [], duracion_seg: 8 }), 8000, "video sin tramos: cae en duracion_seg");
 igual(p.duracionMs({ tipo: "oferta", duracion_seg: 8 }), 8000, "las demás placas siguen igual");
 
+// ---- Encuadre y precio encima (puntos 7 y 8) -----------------------------
+const o = v as unknown as {
+  opcionesVideo: (p: Record<string, unknown>) => { encuadre: string; foco: string; texto: string };
+  estiloVideo: (e: string, f: string) => { objectFit: string; objectPosition: string };
+};
+igual(o.opcionesVideo({}), { encuadre: "entero", foco: "centro", texto: "ninguno" }, "sin la migración 030: entero, centro, sin texto");
+igual(
+  o.opcionesVideo({ video_encuadre: "llenar", video_foco: "fin", video_texto: "arriba" }),
+  { encuadre: "llenar", foco: "fin", texto: "arriba" },
+  "las opciones guardadas se respetan",
+);
+igual(
+  o.opcionesVideo({ video_encuadre: "estirar", video_foco: "costado", video_texto: "medio" }),
+  { encuadre: "entero", foco: "centro", texto: "ninguno" },
+  "un valor desconocido cae en el seguro por defecto",
+);
+igual(o.estiloVideo("entero", "inicio"), { objectFit: "contain", objectPosition: "50% 50%" }, "entero: se ve todo y el foco no importa");
+igual(o.estiloVideo("llenar", "inicio"), { objectFit: "cover", objectPosition: "0% 0%" }, "llenar desde el inicio: arriba / izquierda");
+igual(o.estiloVideo("llenar", "centro"), { objectFit: "cover", objectPosition: "50% 50%" }, "llenar al centro");
+igual(o.estiloVideo("llenar", "fin"), { objectFit: "cover", objectPosition: "100% 100%" }, "llenar hasta el fin: abajo / derecha");
+
 console.log(`\n${fallos === 0 ? "OK" : "FALLÓ"}: ${fallos} fallos.`);
 process.exit(fallos === 0 ? 0 : 1);

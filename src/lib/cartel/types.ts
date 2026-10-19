@@ -48,7 +48,18 @@ export type Placa = {
   orden_flyer?: number;
   /** Tramos de una placa de video (migración 029). Opcional: las filas viejas no lo traen. */
   clips?: Clip[] | null;
+  /** Opciones de la placa de video (migración 030). Faltar es el valor por defecto. */
+  video_encuadre?: EncuadreVideo;
+  video_foco?: FocoVideo;
+  video_texto?: TextoVideo;
 };
+
+/** "entero": se ve todo, con bordes. "llenar": ocupa la pantalla y recorta. */
+export type EncuadreVideo = "entero" | "llenar";
+/** Con "llenar", qué parte queda a la vista: arriba/izquierda, centro, abajo/derecha. */
+export type FocoVideo = "inicio" | "centro" | "fin";
+/** El precio de la oferta encima del video. */
+export type TextoVideo = "ninguno" | "arriba" | "abajo";
 
 /** Lo que la pantalla necesita para dibujar; el admin maneja el resto. */
 export type PlacaNueva = Omit<Placa, "id">;

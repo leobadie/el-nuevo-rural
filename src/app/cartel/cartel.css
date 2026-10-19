@@ -727,3 +727,179 @@
   padding: calc(var(--u) * 16);
   margin: 0;
 }
+
+/* ---------- Precio encima del video ----------
+   Una banda con degradé para que el texto se lea sobre cualquier imagen, con
+   la misma letra y el mismo golpe de precio que las placas de oferta. */
+.vd-texto {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  color: #fff;
+  padding: calc(var(--u) * 56) calc(var(--u) * 50);
+  text-shadow: 0 calc(var(--u) * 4) calc(var(--u) * 18) rgba(0, 0, 0, 0.55);
+}
+
+.vd-texto-abajo {
+  bottom: 0;
+  padding-top: calc(var(--u) * 140);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82) 55%, rgba(0, 0, 0, 0));
+  animation: vd-subir 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.vd-texto-arriba {
+  top: 0;
+  padding-bottom: calc(var(--u) * 140);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.82) 55%, rgba(0, 0, 0, 0));
+  animation: vd-bajar 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes vd-subir {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--u) * 80));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes vd-bajar {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--u) * -80));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.vd-seccion {
+  padding: calc(var(--u) * 10) calc(var(--u) * 30);
+  border-radius: 999px;
+  font-size: calc(var(--u) * 34);
+  font-weight: 900;
+  letter-spacing: calc(var(--u) * 3);
+  text-transform: uppercase;
+  margin-bottom: calc(var(--u) * 18);
+  text-shadow: none;
+}
+
+.vd-titulo {
+  font-size: calc(var(--u) * 88);
+  font-weight: 800;
+  line-height: 1.05;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.vd-titulo-largo {
+  font-size: calc(var(--u) * 64);
+}
+
+.vd-antes {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 20);
+  margin-top: calc(var(--u) * 16);
+}
+
+.vd-tachado {
+  font-size: calc(var(--u) * 48);
+  font-weight: 600;
+  opacity: 0.8;
+  text-decoration: line-through;
+  text-decoration-thickness: calc(var(--u) * 5);
+}
+
+.vd-off {
+  background: #ffd400;
+  color: #1a1a2e;
+  padding: calc(var(--u) * 8) calc(var(--u) * 22);
+  border-radius: calc(var(--u) * 14);
+  font-size: calc(var(--u) * 44);
+  font-weight: 900;
+  text-shadow: none;
+}
+
+.vd-precio {
+  font-size: calc(var(--u) * 190);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: calc(var(--u) * -6);
+  font-variant-numeric: tabular-nums;
+  margin-top: calc(var(--u) * 8);
+  animation: cartel-golpe 560ms cubic-bezier(0.34, 1.56, 0.64, 1) 380ms both;
+}
+
+.vd-precio-largo {
+  font-size: calc(var(--u) * 140);
+}
+
+.vd-pie {
+  margin-top: calc(var(--u) * 10);
+  font-size: calc(var(--u) * 40);
+  font-weight: 700;
+  opacity: 0.92;
+}
+
+.cartel-captura .vd-texto,
+.cartel-captura .vd-precio {
+  animation: none;
+}
+
+/* Vista previa del admin como TV acostado: el lienzo se da vuelta acá porque
+   la previa no vive dentro de .cartel-fondo (la regla apaisada no la alcanza). */
+.cartel-marco.cartel-previa-horizontal {
+  width: calc(var(--u) * 1920);
+  height: calc(var(--u) * 1080);
+}
+
+/* En un TV acostado hay 1080 de alto y no 1920: la banda se achica para no
+   tapar más de un tercio del video. Aplica al TV horizontal sin giro y a la
+   previa del admin en modo acostado. */
+@media (min-aspect-ratio: 4/3) {
+  .cartel-fondo:not(.cartel-rotado-90):not(.cartel-rotado-270) .vd-texto {
+    padding: calc(var(--u) * 30) calc(var(--u) * 50);
+  }
+  .cartel-fondo:not(.cartel-rotado-90):not(.cartel-rotado-270) .vd-texto-abajo {
+    padding-top: calc(var(--u) * 80);
+  }
+  .cartel-fondo:not(.cartel-rotado-90):not(.cartel-rotado-270) .vd-texto-arriba {
+    padding-bottom: calc(var(--u) * 80);
+  }
+  .cartel-fondo:not(.cartel-rotado-90):not(.cartel-rotado-270) .vd-titulo {
+    font-size: calc(var(--u) * 66);
+  }
+  .cartel-fondo:not(.cartel-rotado-90):not(.cartel-rotado-270) .vd-precio {
+    font-size: calc(var(--u) * 140);
+  }
+  .cartel-fondo:not(.cartel-rotado-90):not(.cartel-rotado-270) .vd-seccion {
+    display: none;
+  }
+}
+
+.cartel-previa-horizontal .vd-texto {
+  padding: calc(var(--u) * 30) calc(var(--u) * 50);
+}
+.cartel-previa-horizontal .vd-texto-abajo {
+  padding-top: calc(var(--u) * 80);
+}
+.cartel-previa-horizontal .vd-texto-arriba {
+  padding-bottom: calc(var(--u) * 80);
+}
+.cartel-previa-horizontal .vd-titulo {
+  font-size: calc(var(--u) * 66);
+}
+.cartel-previa-horizontal .vd-precio {
+  font-size: calc(var(--u) * 140);
+}
+.cartel-previa-horizontal .vd-seccion {
+  display: none;
+}

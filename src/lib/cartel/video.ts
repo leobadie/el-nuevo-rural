@@ -1,4 +1,4 @@
-import type { Clip } from "./types";
+import type { Clip, EncuadreVideo, FocoVideo, Placa, TextoVideo } from "./types";
 
 /**
  * Cálculos de las placas de video (SPEC-cartel-videos.md). Código puro, sin
@@ -119,4 +119,28 @@ export function mb(bytes: number): string {
 /** "12,5 s" para mostrar tiempos en el recortador. */
 export function fmtSeg(seg: number): string {
   return `${(Math.round(seg * 10) / 10).toLocaleString("es-AR")} s`;
+}
+
+/** Opciones de una placa de video con sus valores por defecto (migración 030). */
+export function opcionesVideo(placa: Pick<Placa, "video_encuadre" | "video_foco" | "video_texto">): {
+  encuadre: EncuadreVideo;
+  foco: FocoVideo;
+  texto: TextoVideo;
+} {
+  return {
+    encuadre: placa.video_encuadre === "llenar" ? "llenar" : "entero",
+    foco: placa.video_foco === "inicio" || placa.video_foco === "fin" ? placa.video_foco : "centro",
+    texto: placa.video_texto === "arriba" || placa.video_texto === "abajo" ? placa.video_texto : "ninguno",
+  };
+}
+
+/**
+ * CSS para el video. Con "llenar" solo sobra en un eje (el que no coincide), así
+ * que el mismo porcentaje en los dos sirve: 0% es arriba o izquierda, 100% abajo
+ * o derecha. Con "entero" no sobra nada y la posición no importa.
+ */
+export function estiloVideo(encuadre: EncuadreVideo, foco: FocoVideo): { objectFit: "contain" | "cover"; objectPosition: string } {
+  if (encuadre === "entero") return { objectFit: "contain", objectPosition: "50% 50%" };
+  const p = foco === "inicio" ? "0%" : foco === "fin" ? "100%" : "50%";
+  return { objectFit: "cover", objectPosition: `${p} ${p}` };
 }

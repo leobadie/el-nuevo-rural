@@ -135,3 +135,7 @@ que la app "haga videos por sí sola".
   interfaz para unirlos (paso 4). Se verifica con `verificar:cartel-videos` (admin en el banco,
   TV contra la base con una pantalla apartada) y `verificar:cartel-videos-calculos`.
   **Pendiente: probar en un Quantic real con un video filmado con el celular.**
+- **Paso 3 (encuadre y precio encima): hecho** el 18/10/2026, migración 030 aplicada.
+  `video_encuadre` (entero / llenar), `video_foco` (inicio / centro / fin) y `video_texto`
+  (ninguno / arriba / abajo). La banda usa los datos de oferta de la misma placa; en TV
+  acostado se achica (46% del alto con precio anterior y unidad). Previa parado/acostado.

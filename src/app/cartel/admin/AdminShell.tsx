@@ -20,7 +20,7 @@ import PlacaVista from "../PlacaVista";
 import PantallasPanel from "./PantallasPanel";
 import FlyerTab, { type AccionesFlyer } from "./FlyerTab";
 import VideoEditor from "./VideoEditor";
-import { duracionClips } from "@/lib/cartel/video";
+import { duracionClips, opcionesVideo } from "@/lib/cartel/video";
 import { puedeIrAlFlyer, siguienteOrdenFlyer, type ConfigFlyer } from "@/lib/ofertas/flyer";
 import {
   NARANJA,
@@ -31,7 +31,7 @@ import {
   hoyISO,
   estaVigente,
 } from "@/lib/cartel/placas";
-import type { Asignacion, Clip, Pantalla, Placa, TipoPlaca } from "@/lib/cartel/types";
+import type { Asignacion, Clip, EncuadreVideo, FocoVideo, Pantalla, Placa, TextoVideo, TipoPlaca } from "@/lib/cartel/types";
 
 const COLORES = [
   { nombre: "Azul (marca)", valor: NAVY },
@@ -62,6 +62,9 @@ type Form = {
   en_flyer: boolean;
   /** Tramos de la placa de video (SPEC-cartel-videos.md). */
   clips: Clip[];
+  video_encuadre: EncuadreVideo;
+  video_foco: FocoVideo;
+  video_texto: TextoVideo;
 };
 
 const FORM_VACIO: Form = {
@@ -82,6 +85,9 @@ const FORM_VACIO: Form = {
   pantallas: [],
   en_flyer: false,
   clips: [],
+  video_encuadre: "entero",
+  video_foco: "centro",
+  video_texto: "ninguno",
 };
 
 /** "1.234,50" y "1234.50" tienen que valer lo mismo: acá se carga a mano y rápido. */
@@ -111,6 +117,10 @@ function formDesde(placa: Placa, asignaciones: Asignacion[]): Form {
     activa: placa.activa,
     en_flyer: !!placa.en_flyer,
     clips: placa.clips ?? [],
+    ...(() => {
+      const o = opcionesVideo(placa);
+      return { video_encuadre: o.encuadre, video_foco: o.foco, video_texto: o.texto };
+    })(),
   };
 }
 
@@ -180,8 +190,14 @@ export default function AdminShell({
     orden: Number(form.orden) || 0,
     activa: form.activa,
     clips: form.tipo === "video" ? form.clips : null,
+    video_encuadre: form.video_encuadre,
+    video_foco: form.video_foco,
+    video_texto: form.video_texto,
   };
   const esVideo = form.tipo === "video";
+  // El precio se carga en las ofertas y en los videos que lo llevan encima.
+  const llevaPrecio = form.tipo === "oferta" || (esVideo && form.video_texto !== "ninguno");
+  const [previaHorizontal, setPreviaHorizontal] = useState(false);
 
   function limpiar() {
     setEditando(null);
@@ -233,7 +249,14 @@ export default function AdminShell({
       activa: form.activa,
       // Solo los videos mandan clips: así el resto se sigue guardando aunque la
       // migración 029 no esté aplicada.
-      ...(form.tipo === "video" ? { clips: form.clips } : {}),
+      ...(form.tipo === "video"
+        ? {
+            clips: form.clips,
+            video_encuadre: form.video_encuadre,
+            video_foco: form.video_foco,
+            video_texto: form.video_texto,
+          }
+        : {}),
       // Sin la 023 la columna no existe y mandarla haría fallar el guardado entero.
       ...(faltaMigracionFlyer ? {} : datosFlyer()),
     };
@@ -710,7 +733,7 @@ export default function AdminShell({
                   </Campo>
                 )}
 
-                <Campo etiqueta={form.tipo === "oferta" ? "Producto" : esVideo ? "Nombre del video (para reconocerlo en la lista)" : "Título"}>
+                <Campo etiqueta={llevaPrecio ? "Producto" : esVideo ? "Nombre del video (para reconocerlo en la lista)" : "Título"}>
                   <input
                     value={form.titulo}
                     onChange={(e) => set("titulo", e.target.value)}
@@ -727,6 +750,53 @@ export default function AdminShell({
                   </Campo>
                 )}
 
+                {esVideo && (
+                  <>
+                    <Campo etiqueta="Encuadre">
+                      <Opciones
+                        valor={form.video_encuadre}
+                        onChange={(v) => set("video_encuadre", v)}
+                        opciones={[
+                          ["entero", "Entero, con bordes"],
+                          ["llenar", "Llenar la pantalla (recorta)"],
+                        ]}
+                        prueba="video-encuadre"
+                      />
+                    </Campo>
+                    {form.video_encuadre === "llenar" && (
+                      <Campo etiqueta="Si sobra, qué parte se ve">
+                        <Opciones
+                          valor={form.video_foco}
+                          onChange={(v) => set("video_foco", v)}
+                          opciones={[
+                            ["inicio", "Arriba / izquierda"],
+                            ["centro", "El centro"],
+                            ["fin", "Abajo / derecha"],
+                          ]}
+                          prueba="video-foco"
+                        />
+                      </Campo>
+                    )}
+                    <Campo etiqueta="Precio encima del video">
+                      <Opciones
+                        valor={form.video_texto}
+                        onChange={(v) => set("video_texto", v)}
+                        opciones={[
+                          ["ninguno", "Sin texto"],
+                          ["abajo", "Abajo"],
+                          ["arriba", "Arriba"],
+                        ]}
+                        prueba="video-texto"
+                      />
+                      {form.video_texto !== "ninguno" && (
+                        <p style={{ fontSize: 12, color: "#64748B", margin: "6px 0 0" }}>
+                          Se muestran el producto, la sección, el precio y la vigencia que cargues en este formulario.
+                        </p>
+                      )}
+                    </Campo>
+                  </>
+                )}
+
                 {!esVideo && (
                 <Campo etiqueta={form.tipo === "oferta" ? "Sección o detalle" : "Bajada"}>
                   <input
@@ -738,7 +808,7 @@ export default function AdminShell({
                 </Campo>
                 )}
 
-                {form.tipo === "oferta" && (
+                {llevaPrecio && (
                   <>
                     <div style={{ display: "flex", gap: 10 }}>
                       <Campo etiqueta="Precio">
@@ -893,11 +963,25 @@ export default function AdminShell({
                 <p style={{ fontSize: 11, color: "#888", marginBottom: 6, textAlign: "center" }}>
                   Así se ve en el TV
                 </p>
+                {esVideo && (
+                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+                    <Opciones
+                      valor={previaHorizontal ? "acostado" : "parado"}
+                      onChange={(v) => setPreviaHorizontal(v === "acostado")}
+                      opciones={[
+                        ["parado", "TV parado"],
+                        ["acostado", "TV acostado"],
+                      ]}
+                      prueba="previa-orientacion"
+                    />
+                  </div>
+                )}
                 <div
-                  className="cartel-marco"
+                  className={esVideo && previaHorizontal ? "cartel-marco cartel-previa-horizontal" : "cartel-marco"}
                   style={
                     {
-                      "--u": "0.24px",
+                      // Acostado mide 1920 de ancho: con la escala del parado no entraría en el celular.
+                      "--u": esVideo && previaHorizontal ? "0.18px" : "0.24px",
                       background: esVideo ? "#000" : previa.color || NAVY,
                       borderRadius: 10,
                       boxShadow: "0 4px 18px rgba(0,0,0,0.25)",
@@ -1051,3 +1135,45 @@ const iconoBoton: CSSProperties = {
   cursor: "pointer",
   color: "#333",
 };
+
+/** Botones de opción excluyentes, más cómodos que un select en el celular. */
+function Opciones<T extends string>({
+  valor,
+  onChange,
+  opciones,
+  prueba,
+}: {
+  valor: T;
+  onChange: (v: T) => void;
+  opciones: [T, string][];
+  prueba: string;
+}) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }} data-test={prueba}>
+      {opciones.map(([v, texto]) => {
+        const elegida = v === valor;
+        return (
+          <button
+            type="button"
+            key={v}
+            onClick={() => onChange(v)}
+            data-valor={v}
+            aria-pressed={elegida}
+            style={{
+              border: `1px solid ${elegida ? NAVY : "#CBD5E1"}`,
+              background: elegida ? NAVY : "#fff",
+              color: elegida ? "#fff" : "#475569",
+              borderRadius: 999,
+              padding: "5px 11px",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            {texto}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

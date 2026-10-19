@@ -162,13 +162,70 @@ try {
     await a.locator('[data-test="editor-video"]').scrollIntoViewIfNeeded();
     await a.screenshot({ path: path.join(SALIDA, `editor-video-${nombre}.png`) });
 
+    // ---- Paso 3: encuadre y precio encima --------------------------------
+    const videoPrevia = previa.locator(".pl-video video");
+    const estilo = () => videoPrevia.evaluate((v) => ({ fit: getComputedStyle(v).objectFit, pos: getComputedStyle(v).objectPosition }));
+    ok((await estilo()).fit === "contain", `${nombre}: por defecto el video se ve entero`, JSON.stringify(await estilo()));
+    await a.click('[data-test="video-encuadre"] [data-valor="llenar"]');
+    await a.click('[data-test="video-foco"] [data-valor="inicio"]');
+    const lleno = await estilo();
+    ok(lleno.fit === "cover" && lleno.pos === "0% 0%", `${nombre}: "llenar" desde arriba recorta y deja ver el principio`, JSON.stringify(lleno));
+
+    ok((await previa.locator('[data-test="precio-encima"]').count()) === 0, `${nombre}: sin texto, no hay nada encima del video`);
+    ok(!(await a.isVisible('input[placeholder="8990"]')), `${nombre}: …y no se piden precios`);
+    await a.click('[data-test="video-texto"] [data-valor="abajo"]');
+    await a.fill('input[placeholder="8990"]', "8990");
+    await a.fill('input[placeholder="11500"]', "11500");
+    const banda = previa.locator('[data-test="precio-encima"]');
+    await banda.waitFor({ timeout: 5_000 });
+    // La banda entra deslizándose (0,6 s): se mide quieta.
+    await a.waitForTimeout(900);
+    const textoBanda = await banda.textContent();
+    ok(/8\.990/.test(textoBanda ?? "") && /22% OFF/.test(textoBanda ?? ""), `${nombre}: el precio y el % OFF aparecen encima del video`, textoBanda?.trim());
+    const pegada = await a.evaluate(() => {
+      const m = [...document.querySelectorAll(".cartel-marco")].find((x) => x.offsetParent && x.querySelector('[data-test="precio-encima"]'));
+      const b = m.querySelector('[data-test="precio-encima"]').getBoundingClientRect();
+      const r = m.getBoundingClientRect();
+      return { abajo: Math.abs(b.bottom - r.bottom), arriba: Math.abs(b.top - r.top) };
+    });
+    ok(pegada.abajo < 2, `${nombre}: "abajo" va pegado al pie del video`, JSON.stringify(pegada));
+    await a.click('[data-test="video-texto"] [data-valor="arriba"]');
+    await a.waitForTimeout(300);
+    const arriba = await a.evaluate(() => {
+      const m = [...document.querySelectorAll(".cartel-marco")].find((x) => x.offsetParent && x.querySelector('[data-test="precio-encima"]'));
+      return Math.abs(m.querySelector('[data-test="precio-encima"]').getBoundingClientRect().top - m.getBoundingClientRect().top);
+    });
+    ok(arriba < 2, `${nombre}: "arriba" va pegado al borde de arriba`, `${arriba}px`);
+
+    // Previa como TV acostado.
+    await a.click('[data-test="previa-orientacion"] [data-valor="acostado"]');
+    const acostada = await previa.evaluate((m) => ({ w: m.getBoundingClientRect().width, h: m.getBoundingClientRect().height }));
+    ok(acostada.w > acostada.h, `${nombre}: la previa se puede ver como TV acostado`, `${Math.round(acostada.w)}x${Math.round(acostada.h)}`);
+    const bandaAcostada = await previa.evaluate((m) => m.querySelector('[data-test="precio-encima"]').getBoundingClientRect().height / m.getBoundingClientRect().height);
+    ok(bandaAcostada < 0.6, `${nombre}: acostado, la banda no tapa más de la mitad`, `${Math.round(bandaAcostada * 100)}%`);
+    const anchoAcostado = await a.evaluate(() => document.documentElement.scrollWidth);
+    ok(anchoAcostado <= viewport.width, `${nombre}: la previa acostada entra sin scroll horizontal`, `${anchoAcostado}px`);
+    await previa.scrollIntoViewIfNeeded();
+    await a.waitForTimeout(1200);
+    await a.screenshot({ path: path.join(SALIDA, `previa-acostada-${nombre}.png`) });
+    await a.click('[data-test="previa-orientacion"] [data-valor="parado"]');
+    await a.waitForTimeout(1200);
+    await previa.screenshot({ path: path.join(SALIDA, `previa-parada-${nombre}.png`) });
+
     // Guardar.
     await a.fill('input[placeholder="Video de la parrilla"]', `${MARCA} admin`);
     await a.click('button:has-text("Crear placa")');
-    const enLista = await a.waitForSelector(`text=${MARCA} admin`, { timeout: 10_000 }).then(() => true).catch(() => false);
+    // Dentro de la lista: el nombre también aparece en la banda de la previa.
+    const lista = a.locator('section:has(h2:has-text("Placas ("))');
+    const enLista = await lista
+      .locator(`text=${MARCA} admin`)
+      .first()
+      .waitFor({ timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false);
     ok(enLista, `${nombre}: la placa de video se guarda y aparece en la lista`);
     // La línea de detalle es la que sigue al título de la placa.
-    const detalle = await a
+    const detalle = await lista
       .locator(`text=${MARCA} admin`)
       .first()
       .locator("xpath=following-sibling::div[1]")
@@ -281,6 +338,75 @@ try {
 
     const of = de("oferta");
     ok(of.header, "después de un video, la oferta vuelve con su franja");
+
+    // ---- Paso 3 en el TV: encuadre y precio encima (migración 030) --------
+    const { error: sin030 } = await admin.from("cartel_placas").select("video_texto").limit(1);
+    if (sin030) {
+      skip("encuadre y precio encima en el televisor", `falta la migración 030 (${sin030.message})`);
+    } else {
+      const { data: conTexto, error: eTexto } = await admin
+        .from("cartel_placas")
+        .insert({
+          titulo: `${MARCA} con precio`,
+          tipo: "video",
+          clips: [clip(0, 3)],
+          duracion_seg: 3,
+          orden: 9405,
+          activa: true,
+          seccion: "Carnicería",
+          precio: 8990,
+          precio_anterior: 11500,
+          unidad: "el kilo",
+          video_encuadre: "llenar",
+          video_foco: "fin",
+          video_texto: "arriba",
+        })
+        .select("id")
+        .single();
+      ok(!eTexto, "se guarda una placa de video con encuadre y precio encima", eTexto?.message);
+      const { error: eMalo } = await admin.from("cartel_placas").insert({ titulo: `${MARCA} malo`, tipo: "video", clips: [clip(0, 3)], duracion_seg: 3, video_texto: "medio" });
+      ok(!!eMalo, "la base rechaza una posición de texto inventada", eMalo?.message ?? "¡LA ACEPTÓ!");
+      await admin.from("cartel_placa_pantalla").insert({ placa_id: conTexto.id, pantalla_slug: SLUG });
+
+      for (const [forma, vp] of [
+        ["parado", { width: 1080, height: 1920 }],
+        ["acostado", { width: 1920, height: 1080 }],
+      ]) {
+        const c2 = await browser.newContext({ viewport: vp });
+        await c2.route(/\/rest\/v1\/rpc\/cartel_latido/, (r) => r.abort());
+        const q = await c2.newPage();
+        await q.goto(`${BASE}/cartel/tv/${SLUG}?fijo=0`, { waitUntil: "load" });
+        const n = Number(await q.$eval(".cartel-marco", (m) => m.dataset.total));
+        let encontrada = false;
+        for (let i = 0; i < n && !encontrada; i++) {
+          await q.goto(`${BASE}/cartel/tv/${SLUG}?fijo=${i}`, { waitUntil: "load" });
+          await q.waitForSelector(".cartel-marco");
+          if ((await q.$eval(".cartel-marco", (m) => m.dataset.placa)) !== conTexto.id) continue;
+          encontrada = true;
+          await q.waitForTimeout(1500);
+          const r = await q.evaluate(() => {
+            const m = document.querySelector(".cartel-marco").getBoundingClientRect();
+            const v = document.querySelector(".pl-video video");
+            const b = document.querySelector('[data-test="precio-encima"]');
+            const bb = b?.getBoundingClientRect();
+            return {
+              fit: getComputedStyle(v).objectFit,
+              pos: getComputedStyle(v).objectPosition,
+              texto: b?.textContent ?? "",
+              arriba: bb ? Math.abs(bb.top - m.top) : null,
+              alto: bb ? bb.height / m.height : null,
+            };
+          });
+          ok(r.fit === "cover" && r.pos === "100% 100%", `${forma}: el video llena la pantalla mostrando el final`, `${r.fit} ${r.pos}`);
+          ok(/8\.990/.test(r.texto) && /22% OFF/.test(r.texto) && /el kilo/.test(r.texto), `${forma}: el precio va encima del video`, r.texto);
+          ok(r.arriba != null && r.arriba < 2, `${forma}: arriba, como se eligió`, `${r.arriba}px`);
+          ok(r.alto != null && r.alto < (forma === "acostado" ? 0.6 : 0.4), `${forma}: la banda deja ver el video`, `${Math.round((r.alto ?? 1) * 100)}% del alto`);
+          await q.screenshot({ path: path.join(SALIDA, `tv-video-precio-${forma}.png`) });
+        }
+        ok(encontrada, `${forma}: la placa con precio aparece en la pantalla de prueba`);
+        await c2.close();
+      }
+    }
 
     // Modo captura: congelado en el primer cuadro del recorte.
     const indice = await t.evaluate(() => Number(document.querySelector(".cartel-marco").dataset.total));

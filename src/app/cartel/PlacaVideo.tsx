@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Placa } from "@/lib/cartel/types";
+import { colorDePlaca, fmtPrecio, porcentajeAhorro, textoVigencia } from "@/lib/cartel/placas";
+import { estiloVideo, opcionesVideo } from "@/lib/cartel/video";
 
 /** Si un video no arranca, cuánto se espera antes de saltarlo. */
 const ESPERA_ERROR_MS = 2000;
@@ -30,6 +32,7 @@ export default function PlacaVideo({
   const ref = useRef<HTMLVideoElement>(null);
   const terminado = useRef(false);
   const clip = clips[i] ?? clips[0];
+  const { encuadre, foco, texto } = opcionesVideo(placa);
 
   // Cada tramo arranca en su `desde`. Con el mismo archivo no hace falta
   // recargarlo: alcanza con mover la posición.
@@ -89,6 +92,7 @@ export default function PlacaVideo({
         muted
         playsInline
         preload="auto"
+        style={estiloVideo(encuadre, foco)}
         autoPlay={!quieto}
         onTimeUpdate={(e) => {
           if (e.currentTarget.currentTime >= clip.hasta - 0.05) siguienteTramo();
@@ -97,8 +101,40 @@ export default function PlacaVideo({
         onError={() => setRoto(true)}
         data-tramo={i}
       />
+      {texto !== "ninguno" && <PrecioEncima placa={placa} donde={texto} />}
       {/* En la previa del admin se avisa; en el TV no, ahí se salta y listo. */}
       {roto && !onFin && <p className="pl-video-roto">Este video no se puede reproducir</p>}
+    </div>
+  );
+}
+
+/**
+ * El precio de la oferta encima del video (SPEC-cartel-videos.md, punto 8).
+ * Lo dibuja la app y no va "quemado" en el archivo: cambiar el precio es
+ * instantáneo y sale nítido, con la letra de las placas.
+ */
+function PrecioEncima({ placa, donde }: { placa: Placa; donde: "arriba" | "abajo" }) {
+  const off = porcentajeAhorro(placa);
+  const vigencia = textoVigencia(placa);
+  const precio = placa.precio != null ? fmtPrecio(placa.precio) : null;
+  const pie = [placa.unidad, vigencia].filter(Boolean).join(" · ");
+
+  return (
+    <div className={`vd-texto vd-texto-${donde}`} data-test="precio-encima">
+      {placa.seccion && (
+        <span className="vd-seccion" style={{ background: colorDePlaca(placa) }}>
+          {placa.seccion}
+        </span>
+      )}
+      <h2 className={placa.titulo.length > 24 ? "vd-titulo vd-titulo-largo" : "vd-titulo"}>{placa.titulo}</h2>
+      {(placa.precio_anterior != null || off != null) && (
+        <div className="vd-antes">
+          {placa.precio_anterior != null && <span className="vd-tachado">{fmtPrecio(placa.precio_anterior)}</span>}
+          {off != null && <span className="vd-off">{off}% OFF</span>}
+        </div>
+      )}
+      {precio && <span className={precio.length > 9 ? "vd-precio vd-precio-largo" : "vd-precio"}>{precio}</span>}
+      {pie && <span className="vd-pie">{pie}</span>}
     </div>
   );
 }
