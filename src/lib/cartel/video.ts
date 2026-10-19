@@ -14,6 +14,85 @@ export const BYTES_SUGERIDOS_VIDEO = 20 * 1024 * 1024;
 /** Un tramo más corto que esto no se llega a ver en el TV. */
 export const MIN_TRAMO_SEG = 1;
 
+// ---- Apto para la tele (SPEC-cartel-convertir-video.md) -------------------
+
+/**
+ * Tope del archivo original cuando se va a adaptar: el tope de 50 MB rige para
+ * lo que se sube, y más de esto cuelga el navegador del celular.
+ */
+export const MAX_BYTES_ORIGINAL = 500 * 1024 * 1024;
+
+/** Lado largo y corto máximos: lo que decodifica una tele Full HD (nivel 4.x). */
+export const LADO_LARGO_TELE = 1920;
+export const LADO_CORTO_TELE = 1080;
+/** Nivel H.264 máximo: el 5.0 de un celular dejó en negro a Carnicería 1 (19/10/2026). */
+export const NIVEL_MAX_TELE = 4.1;
+export const FPS_MAX_TELE = 30;
+/** Bits por segundo de video por encima de los cuales se adapta. */
+export const BITRATE_MAX_TELE = 8_000_000;
+/** Lo que se le pide al codificador al adaptar. */
+export const BITRATE_ADAPTADO = 6_000_000;
+
+/** Lo que se sabe de un video antes de subirlo. */
+export type FichaVideo = {
+  codec: string | null;
+  /** Nivel H.264 (4.1, 5…) leído del codec string; null si no es H.264 o no se sabe. */
+  nivel: number | null;
+  /** Tamaño como se ve (con el giro del celular ya aplicado). */
+  ancho: number;
+  alto: number;
+  fps: number | null;
+  bitrate: number | null;
+  /** Si el archivo es MP4 (un MOV de iPhone conviene pasarlo a MP4). */
+  esMp4: boolean;
+  /** Si el video viene girado por metadatos: algunas teles ignoran el giro. */
+  girado: boolean;
+};
+
+/** "avc1.640032" → 5. El último byte del codec string es el nivel × 10. */
+export function nivelH264(codecString: string | null | undefined): number | null {
+  const m = codecString?.match(/^avc[13]\.[0-9a-f]{4}([0-9a-f]{2})$/i);
+  return m ? parseInt(m[1], 16) / 10 : null;
+}
+
+/**
+ * Tamaño al que hay que llevar el video para que entre en la tele sin deformar:
+ * parado dentro de 1080×1920, acostado dentro de 1920×1080. Nunca agranda, y
+ * los lados quedan pares (el codificador H.264 los pide así).
+ */
+export function tamanoParaTele(ancho: number, alto: number): { ancho: number; alto: number } {
+  const parado = alto >= ancho;
+  const maxAncho = parado ? LADO_CORTO_TELE : LADO_LARGO_TELE;
+  const maxAlto = parado ? LADO_LARGO_TELE : LADO_CORTO_TELE;
+  const escala = Math.min(1, maxAncho / ancho, maxAlto / alto);
+  const par = (n: number) => Math.max(2, Math.floor(n / 2) * 2);
+  return { ancho: par(ancho * escala), alto: par(alto * escala) };
+}
+
+/**
+ * Por qué un video no es apto para la tele; vacío = se sube tal cual.
+ * grave = la tele probablemente no lo muestre (si no se puede adaptar, no se
+ * sube); los demás conviene adaptarlos, pero el video anda igual.
+ */
+export type Motivo = { texto: string; grave: boolean };
+
+export function motivosParaAdaptar(f: FichaVideo): Motivo[] {
+  const motivos: Motivo[] = [];
+  if (f.codec !== "avc") {
+    motivos.push({ texto: f.codec === "hevc" ? "está en HEVC (iPhone)" : `está en ${f.codec ?? "un formato desconocido"}`, grave: true });
+  }
+  const t = tamanoParaTele(f.ancho, f.alto);
+  if (t.ancho !== f.ancho || t.alto !== f.alto) motivos.push({ texto: `es más grande que la tele (${f.ancho}×${f.alto})`, grave: true });
+  if (f.codec === "avc" && f.nivel != null && f.nivel > NIVEL_MAX_TELE) motivos.push({ texto: `usa H.264 nivel ${f.nivel}`, grave: true });
+  if (f.fps != null && f.fps > FPS_MAX_TELE + 1) motivos.push({ texto: `tiene ${Math.round(f.fps)} cuadros por segundo`, grave: false });
+  if (f.bitrate != null && f.bitrate > BITRATE_MAX_TELE) {
+    motivos.push({ texto: `pesa mucho por segundo (${Math.round(f.bitrate / 1e6)} Mbps)`, grave: false });
+  }
+  if (!f.esMp4) motivos.push({ texto: "no es MP4", grave: false });
+  if (f.girado) motivos.push({ texto: "viene girado", grave: false });
+  return motivos;
+}
+
 /** Segundos que dura la placa: la suma de los tramos. */
 export function duracionClips(clips: Clip[] | null | undefined): number {
   if (!clips) return 0;

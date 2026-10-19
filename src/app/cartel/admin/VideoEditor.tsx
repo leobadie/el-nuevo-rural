@@ -5,11 +5,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ArrowDown, ArrowUp, Copy, Film, Play, Scissors, Trash2 } from "lucide-react";
 import type { Clip } from "@/lib/cartel/types";
 import {
+  MAX_BYTES_ORIGINAL,
   MAX_BYTES_VIDEO,
   TOTAL_SUGERIDO_SEG,
   acotarTramo,
   avisoResolucion,
   detectarCodec,
+  motivosParaAdaptar,
+  tamanoParaTele,
   duplicarClip,
   duracionClips,
   fmtSeg,
@@ -18,6 +21,7 @@ import {
   quitarClip,
   veredictoVideo,
 } from "@/lib/cartel/video";
+import { fueCancelado, leerFicha, prepararAdaptacion, puedeAdaptar } from "@/lib/cartel/adaptarVideo";
 
 /**
  * Subida y recorte de la placa de video (SPEC-cartel-videos.md, puntos 1-5).
@@ -43,20 +47,55 @@ export default function VideoEditor({
 }) {
   const [subiendo, setSubiendo] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
+  // null = no se está adaptando; 0 a 1 = avance de la conversión.
+  const [adaptando, setAdaptando] = useState<number | null>(null);
+  const cancelarAdaptacion = useRef<(() => void) | null>(null);
 
-  async function subir(archivo: File) {
+  async function subir(original: File) {
     onError(null);
     setAviso(null);
 
-    // El peso se mira antes de leer nada: no tiene sentido cargar 200 MB en
+    // El peso se mira antes de leer nada: no tiene sentido cargar 1 GB en
     // memoria para decir que no.
-    if (archivo.size > MAX_BYTES_VIDEO) {
-      onError(veredictoVideo("desconocido", archivo.size).aviso);
+    if (original.size > MAX_BYTES_ORIGINAL) {
+      onError(`El video pesa ${mb(original.size)}. Hasta ${mb(MAX_BYTES_ORIGINAL)} lo adaptamos nosotros; recortalo antes de subirlo.`);
       return;
     }
 
     setSubiendo(true);
+    let archivo = original;
+    let nota: string | null = null;
     try {
+      // ---- Adaptar a la tele (SPEC-cartel-convertir-video.md) ----
+      // Si no se puede leer la ficha, se sigue como siempre: lo frenan los
+      // chequeos de abajo o se sube.
+      const ficha = await leerFicha(original);
+      const motivos = ficha ? motivosParaAdaptar(ficha) : [];
+      if (ficha && motivos.length > 0) {
+        if (await puedeAdaptar(original)) {
+          setAdaptando(0);
+          const adaptacion = await prepararAdaptacion(original, ficha);
+          cancelarAdaptacion.current = adaptacion.cancelar;
+          archivo = await adaptacion.correr((p) => setAdaptando(p));
+          const t = tamanoParaTele(ficha.ancho, ficha.alto);
+          nota =
+            `Lo adaptamos para las teles porque ${motivos.map((m) => m.texto).join(", ")}: ` +
+            `${ficha.ancho}×${ficha.alto} → ${t.ancho}×${t.alto}, ${mb(original.size)} → ${mb(archivo.size)}.`;
+        } else if (motivos.some((m) => m.grave) && ficha.codec !== "hevc") {
+          // HEVC sigue al aviso de siempre, que explica cómo grabar en el iPhone.
+          onError(
+            `La tele no va a poder mostrar este video (${motivos.map((m) => m.texto).join(", ")}) y este navegador ` +
+              "no lo puede adaptar. Probá subirlo desde Chrome en la compu o en el celular, o exportalo en 1080p con CapCut.",
+          );
+          return;
+        }
+      }
+
+      if (archivo.size > MAX_BYTES_VIDEO) {
+        onError(veredictoVideo("desconocido", archivo.size).aviso);
+        return;
+      }
+
       const codec = detectarCodec(new Uint8Array(await archivo.arrayBuffer()));
       const veredicto = veredictoVideo(codec, archivo.size);
       if (!veredicto.puede) {
@@ -94,11 +133,14 @@ export default function VideoEditor({
       });
       // Se agrega al final: unir clips es subir uno detrás del otro.
       actualizar((cs) => [...cs, nuevo]);
-      setAviso([avisoResolucion(meta.ancho, meta.alto), veredicto.aviso].filter(Boolean).join(" ") || null);
+      setAviso([nota, avisoResolucion(meta.ancho, meta.alto), veredicto.aviso].filter(Boolean).join(" ") || null);
     } catch (e) {
-      onError(`No se pudo subir el video: ${(e as Error).message}`);
+      if (fueCancelado(e)) onError("Cancelado: el video no se subió.");
+      else onError(`No se pudo subir el video: ${(e as Error).message}`);
     } finally {
       setSubiendo(false);
+      setAdaptando(null);
+      cancelarAdaptacion.current = null;
     }
   }
 
@@ -151,7 +193,13 @@ export default function VideoEditor({
       <div>
         <label style={{ ...boton, cursor: subiendo ? "wait" : "pointer" }}>
           <Film size={15} />
-          {subiendo ? "Revisando y subiendo…" : clips.length > 0 ? "Agregar otro video" : "Subir video"}
+          {adaptando != null
+            ? "Adaptando…"
+            : subiendo
+              ? "Revisando y subiendo…"
+              : clips.length > 0
+                ? "Agregar otro video"
+                : "Subir video"}
           <input
             type="file"
             accept="video/*"
@@ -166,9 +214,31 @@ export default function VideoEditor({
           />
         </label>
         <p style={{ fontSize: 12, color: "#64748B", margin: "6px 0 0" }}>
-          MP4 de hasta {mb(MAX_BYTES_VIDEO)}. Efectos, música y textos animados: armalo en CapCut o Canva y subí el resultado.
+          Cualquier video del celular: si la tele no lo puede mostrar, lo adaptamos antes de subirlo. Efectos, música
+          y textos animados: armalo en CapCut o Canva y subí el resultado.
         </p>
       </div>
+
+      {adaptando != null && (
+        <div style={{ display: "grid", gap: 6, padding: "8px 10px", background: "#EEF2FF", borderRadius: 8 }} data-test="adaptando">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13 }}>
+            <span>
+              Adaptando el video para las teles… <strong data-test="adaptando-avance">{Math.round(adaptando * 100)}%</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => cancelarAdaptacion.current?.()}
+              style={{ ...boton, padding: "4px 10px", fontSize: 12 }}
+              data-test="adaptando-cancelar"
+            >
+              Cancelar
+            </button>
+          </div>
+          <div style={{ height: 6, background: "#C7D2FE", borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ width: `${Math.round(adaptando * 100)}%`, height: "100%", background: "#1F3864", transition: "width .3s" }} />
+          </div>
+        </div>
+      )}
 
       {aviso && (
         <p style={{ fontSize: 13, color: "#92400E", background: "#FEF3C7", padding: "8px 10px", borderRadius: 8, margin: 0 }} data-test="aviso-video">

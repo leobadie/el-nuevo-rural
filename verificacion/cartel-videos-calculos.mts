@@ -31,6 +31,9 @@ const v = cargar("src/lib/cartel/video.ts", { "./types": {} }) as {
   detectarCodec: (b: Uint8Array) => string;
   veredictoVideo: (codec: string, bytes: number) => { puede: boolean; aviso: string | null };
   avisoResolucion: (ancho: number | null, alto: number | null) => string | null;
+  nivelH264: (s: string | null) => number | null;
+  tamanoParaTele: (ancho: number, alto: number) => { ancho: number; alto: number };
+  motivosParaAdaptar: (f: Record<string, unknown>) => { texto: string; grave: boolean }[];
 };
 const p = cargar("src/lib/cartel/placas.ts", { "./types": {} }) as {
   duracionMs: (placa: Record<string, unknown>) => number;
@@ -76,6 +79,28 @@ igual(v.avisoResolucion(720, 1280), null, "720x1280 no avisa");
 igual(v.avisoResolucion(1080, 1920), null, "1080x1920 (celular) no avisa");
 igual(v.avisoResolucion(3840, 2160), null, "4K no avisa");
 igual(v.avisoResolucion(null, null), null, "sin tamaño conocido no avisa");
+
+// ---- Apto para la tele (SPEC-cartel-convertir-video.md) ----
+igual(v.nivelH264("avc1.640032"), 5, "avc1.640032 es nivel 5 (el video que dejó en negro a Carnicería 1)");
+igual(v.nivelH264("avc1.64002A"), 4.2, "avc1.64002A es nivel 4.2");
+igual(v.nivelH264("avc1.4D4028"), 4, "avc1.4D4028 es nivel 4");
+igual(v.nivelH264("hvc1.1.6.L93.B0"), null, "un HEVC no tiene nivel H.264");
+igual(v.tamanoParaTele(1080, 2336), { ancho: 886, alto: 1920 }, "1080×2336 → 886×1920 (entra parado, sin deformar)");
+igual(v.tamanoParaTele(1080, 1920), { ancho: 1080, alto: 1920 }, "1080×1920 queda igual");
+igual(v.tamanoParaTele(1920, 1080), { ancho: 1920, alto: 1080 }, "1920×1080 queda igual");
+igual(v.tamanoParaTele(3840, 2160), { ancho: 1920, alto: 1080 }, "4K acostado → 1920×1080");
+igual(v.tamanoParaTele(2160, 3840), { ancho: 1080, alto: 1920 }, "4K parado → 1080×1920");
+igual(v.tamanoParaTele(720, 1280), { ancho: 720, alto: 1280 }, "720×1280 no se agranda");
+igual(v.tamanoParaTele(1081, 1921), { ancho: 1080, alto: 1918 }, "los lados quedan pares");
+const ficha = (extra: Record<string, unknown>) => ({ codec: "avc", nivel: 4, ancho: 1080, alto: 1920, fps: 30, bitrate: 5e6, esMp4: true, girado: false, ...extra });
+igual(v.motivosParaAdaptar(ficha({})), [], "un video de 1080×1920, nivel 4, 30 fps, 5 Mbps se sube tal cual");
+const celular = v.motivosParaAdaptar(ficha({ nivel: 5, ancho: 1080, alto: 2336, bitrate: 12e6 }));
+igual(celular.map((m) => m.grave), [true, true, false], "el del celular: tamaño y nivel son graves, el peso no");
+igual(v.motivosParaAdaptar(ficha({ codec: "hevc", nivel: null }))[0]?.grave, true, "HEVC es grave");
+igual(v.motivosParaAdaptar(ficha({ fps: 60 })).map((m) => m.grave), [false], "60 fps se adapta pero no es grave");
+igual(v.motivosParaAdaptar(ficha({ fps: 30.02 })), [], "30,02 fps (redondeo del celular) no cuenta como más de 30");
+igual(v.motivosParaAdaptar(ficha({ esMp4: false })).length, 1, "un MOV se pasa a MP4");
+igual(v.motivosParaAdaptar(ficha({ girado: true })).length, 1, "un video girado por metadatos se adapta");
 
 // ---- Peso (punto 3) ------------------------------------------------------
 igual(ok("h264", v.MAX_BYTES_VIDEO), true, "justo 50 MB se sube");

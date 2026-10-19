@@ -9,6 +9,13 @@ import { estiloVideo, opcionesVideo } from "@/lib/cartel/video";
 const ESPERA_ERROR_MS = 2000;
 
 /**
+ * Si en este tiempo la imagen no avanzó, la tele no lo está pudiendo mostrar
+ * aunque no dé error (Carnicería 1 quedó en negro con un video de nivel 5.0,
+ * 19/10/2026), o todavía lo está bajando: se pasa a la siguiente placa.
+ */
+const ESPERA_SIN_AVANCE_MS = 8000;
+
+/**
  * Placa de video: reproduce sus tramos en orden, mudo, y avisa cuando terminó
  * (SPEC-cartel-videos.md, puntos 10-14).
  *
@@ -56,6 +63,19 @@ export default function PlacaVideo({
     // terminar solo usa refs y props: no hace falta en las dependencias.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roto, quieto]);
+
+  // Cuadro negro sin error: ni el tiempo avanzó ni se dibujó ningún cuadro.
+  useEffect(() => {
+    if (!onFin || quieto || !clip) return;
+    const id = window.setTimeout(() => {
+      const v = ref.current;
+      if (!v) return;
+      const cuadros = typeof v.getVideoPlaybackQuality === "function" ? v.getVideoPlaybackQuality().totalVideoFrames : null;
+      if (v.currentTime < clip.desde + 0.3 || cuadros === 0) terminar();
+    }, ESPERA_SIN_AVANCE_MS);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clip, i, quieto, onFin]);
 
   function terminar() {
     if (onFin) {

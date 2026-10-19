@@ -46,12 +46,14 @@
     "verificar:precios": "node verificacion/precios.mjs",
     "verificar:cartel-vincular-calculos": "node verificacion/cartel-vincular-calculos.mts",
     "verificar:cartel-vincular": "node verificacion/cartel-vincular.mjs",
-    "verificar:cartel-nueva-placa": "node verificacion/cartel-nueva-placa.mjs"
+    "verificar:cartel-nueva-placa": "node verificacion/cartel-nueva-placa.mjs",
+    "verificar:cartel-adaptar-video": "node verificacion/cartel-adaptar-video.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.8",
     "lucide-react": "^1.26.0",
+    "mediabunny": "1.60.0",
     "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4",
