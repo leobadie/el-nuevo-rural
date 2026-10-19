@@ -51,6 +51,7 @@ export default function CartelPantalla({
   asignacionesIniciales = [],
   rotar = 0,
   version = null,
+  vistaGeneral = false,
 }: {
   placasIniciales: Placa[];
   /** Con un índice, la pantalla se queda quieta en esa placa (modo captura). */
@@ -71,6 +72,12 @@ export default function CartelPantalla({
   rotar?: Rotacion | null;
   /** Commit del deploy, para que el admin sepa qué versión tiene cargada cada TV. */
   version?: string | null;
+  /**
+   * La página general /cartel: no sabe qué tele es, no gira y muestra todo. Una
+   * tele del local la tuvo cargada creyendo que era su pantalla (19/10/2026),
+   * así que lleva un aviso que manda a /tv.
+   */
+  vistaGeneral?: boolean;
 }) {
   // La fila del televisor se relee en cada refresco: así un cambio de sector o
   // de giro hecho desde el admin le llega sin que nadie vaya hasta el local.
@@ -527,6 +534,14 @@ export default function CartelPantalla({
           </div>
         )}
       </div>
+
+      {/* Fuera del marco a propósito: no gira, así que se lee aunque la tele
+          esté parada y la placa salga de costado. */}
+      {vistaGeneral && !modoCaptura && (
+        <div className="cartel-aviso-general" data-test="aviso-vista-general">
+          Vista general: no gira ni sabe qué tele es. Para un televisor del local abrí <strong>/tv</strong>
+        </div>
+      )}
 
       {/* Video mínimo en loop, casi invisible: un TV que reproduce video no pone
           el protector de pantalla. Respaldo del pedido de pantalla prendida. */}

@@ -47,6 +47,7 @@ export default async function CartelPage({
       indiceFijo={indiceFijo}
       seccion={seccion?.trim() || null}
       rotar={rotacionDe(rotar)}
+      vistaGeneral
     />
   );
 }

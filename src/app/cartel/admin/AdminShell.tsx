@@ -1053,7 +1053,7 @@ export default function AdminShell({
         </div>
 
         <p style={{ fontSize: 11, color: "#888", marginTop: 16, textAlign: "center" }}>
-          Poné <strong>/cartel</strong> en el navegador del televisor y dejalo en pantalla completa.
+          En cada televisor abrí <strong>/tv</strong> y vinculalo desde la pestaña Televisores.
           Los cambios llegan solos, en 5 minutos como máximo.
         </p>
       </div>

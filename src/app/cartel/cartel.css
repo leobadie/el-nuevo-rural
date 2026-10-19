@@ -990,3 +990,22 @@
   font-size: calc(var(--u) * 48);
   opacity: 0.8;
 }
+
+/* Aviso de la página general /cartel: abajo, chico, siempre derecho. */
+.cartel-aviso-general {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5vmin;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: 94vw;
+  padding: 0.8vmin 2vmin;
+  border-radius: 1vmin;
+  background: rgba(255, 209, 102, 0.95);
+  color: #12203c;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-size: 2.2vmin;
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
+}

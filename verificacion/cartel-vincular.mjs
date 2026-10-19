@@ -151,6 +151,29 @@ try {
   }
 
   // ======================================================================
+  // Aviso en la página general /cartel (una tele la tuvo cargada creyendo
+  // que era su pantalla, 19/10/2026)
+  // ======================================================================
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    // Abre la pantalla de una tele real: no tiene que marcarla como conectada.
+    await ctx.route(/\/rest\/v1\/rpc\/cartel_latido/, (r) => r.abort());
+    const p = await ctx.newPage();
+    await p.goto(`${BASE}/cartel`, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await p.waitForSelector(".cartel-marco", { timeout: 30_000 });
+    const aviso = await p.textContent('[data-test="aviso-vista-general"]').catch(() => null);
+    ok(/\/tv/.test(aviso ?? ""), "/cartel avisa que es la vista general y manda a /tv", aviso ?? "sin aviso");
+    await p.screenshot({ path: path.join(SALIDA, "cartel-vista-general.png") });
+    await p.goto(`${BASE}/cartel?fijo=0`, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector(".cartel-marco", { timeout: 30_000 });
+    ok(!(await p.$('[data-test="aviso-vista-general"]')), "en modo captura (generador de video) no aparece");
+    await p.goto(`${BASE}/cartel/tv/carniceria-1`, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector(".cartel-marco", { timeout: 30_000 });
+    ok(!(await p.$('[data-test="aviso-vista-general"]')), "en la pantalla de una tele no aparece");
+    await ctx.close();
+  }
+
+  // ======================================================================
   // Parte B — la tele contra la base real
   // ======================================================================
   const { error: sin031 } = admin ? await admin.from("cartel_dispositivos").select("codigo").limit(1) : { error: { message: "sin service_role key" } };
