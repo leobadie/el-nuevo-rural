@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import {
@@ -209,6 +209,24 @@ export default function AdminShell({
     setAviso(null);
   }
 
+  // En el celular el formulario queda debajo de toda la lista: sin llevar la
+  // vista hasta ahí, "Nueva" y "Editar" parecen no hacer nada. En la compu
+  // está al lado y ya se ve, así que no se mueve nada.
+  const formularioRef = useRef<HTMLElement>(null);
+  function irAlFormulario() {
+    window.requestAnimationFrame(() => {
+      const el = formularioRef.current;
+      if (!el) return;
+      const { top } = el.getBoundingClientRect();
+      if (top < 0 || top > window.innerHeight * 0.6) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function nuevaPlaca() {
+    limpiar();
+    irAlFormulario();
+  }
+
   async function guardar() {
     const titulo = form.titulo.trim();
     if (!titulo) {
@@ -340,6 +358,7 @@ export default function AdminShell({
       setForm(formDesde(placa, asignaciones));
       setAviso(null);
       setError(null);
+      irAlFormulario();
     },
     endpoint: endpointFlyer,
   };
@@ -555,7 +574,7 @@ export default function AdminShell({
           <section style={tarjeta}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <h2 style={subtitulo}>Placas ({ordenadas.length})</h2>
-              <button onClick={limpiar} style={botonPrimario}>
+              <button onClick={nuevaPlaca} style={botonPrimario} data-test="nueva-placa">
                 <Plus size={15} /> Nueva
               </button>
             </div>
@@ -636,6 +655,7 @@ export default function AdminShell({
                           setForm(formDesde(p, asignaciones));
                           setAviso(null);
                           setError(null);
+                          irAlFormulario();
                         }}
                         style={{ ...iconoBoton, width: "auto", padding: "0 10px", fontSize: 12, fontWeight: 700 }}
                       >
@@ -652,7 +672,7 @@ export default function AdminShell({
           </section>
 
           {/* ---------- Formulario + previsualización ---------- */}
-          <section style={tarjeta}>
+          <section style={{ ...tarjeta, scrollMarginTop: 12 }} ref={formularioRef} data-test="formulario-placa">
             <h2 style={{ ...subtitulo, marginBottom: 12 }}>
               {editando ? "Editar placa" : "Nueva placa"}
             </h2>
