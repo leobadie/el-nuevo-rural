@@ -2,15 +2,19 @@
 
 import { useRef, useState, type CSSProperties } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { Film, Play, Scissors } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Film, Play, Scissors, Trash2 } from "lucide-react";
 import type { Clip } from "@/lib/cartel/types";
 import {
   MAX_BYTES_VIDEO,
+  TOTAL_SUGERIDO_SEG,
   acotarTramo,
   detectarCodec,
+  duplicarClip,
   duracionClips,
   fmtSeg,
   mb,
+  moverClip,
+  quitarClip,
   veredictoVideo,
 } from "@/lib/cartel/video";
 
@@ -23,12 +27,16 @@ import {
  */
 export default function VideoEditor({
   clips,
-  onChange,
+  actualizar,
   supabase,
   onError,
 }: {
   clips: Clip[];
-  onChange: (clips: Clip[]) => void;
+  /**
+   * Cambia la lista a partir de la vigente y no de una copia: una subida tarda,
+   * y mientras tanto se puede seguir recortando otro clip sin que se pierda.
+   */
+  actualizar: (cambio: (clips: Clip[]) => Clip[]) => void;
   supabase: SupabaseClient;
   onError: (mensaje: string | null) => void;
 }) {
@@ -73,18 +81,18 @@ export default function VideoEditor({
       if (error) throw error;
 
       const { data } = supabase.storage.from("cartel").getPublicUrl(nombre);
-      onChange([
-        acotarTramo({
-          url: data.publicUrl,
-          desde: 0,
-          hasta: Math.min(meta.duracion, 60),
-          duracion: meta.duracion,
-          ancho: meta.ancho,
-          alto: meta.alto,
-          bytes: archivo.size,
-          codec,
-        }),
-      ]);
+      const nuevo = acotarTramo({
+        url: data.publicUrl,
+        desde: 0,
+        hasta: Math.min(meta.duracion, 60),
+        duracion: meta.duracion,
+        ancho: meta.ancho,
+        alto: meta.alto,
+        bytes: archivo.size,
+        codec,
+      });
+      // Se agrega al final: unir clips es subir uno detrás del otro.
+      actualizar((cs) => [...cs, nuevo]);
       setAviso(veredicto.aviso);
     } catch (e) {
       onError(`No se pudo subir el video: ${(e as Error).message}`);
@@ -93,14 +101,56 @@ export default function VideoEditor({
     }
   }
 
-  const clip = clips[0];
+  const total = duracionClips(clips);
 
   return (
     <div style={{ display: "grid", gap: 10 }} data-test="editor-video">
+      {clips.map((c, i) => (
+        <div key={`${c.url}:${i}`} style={{ display: "grid", gap: 6 }} data-test="clip">
+          {clips.length > 1 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
+              <strong style={{ fontSize: 13, color: "#1A1A2E" }}>
+                Clip {i + 1} de {clips.length}
+              </strong>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button type="button" style={icono} disabled={i === 0} onClick={() => actualizar((cs) => moverClip(cs, i, -1))} title="Antes" data-test="clip-subir">
+                  <ArrowUp size={15} />
+                </button>
+                <button type="button" style={icono} disabled={i === clips.length - 1} onClick={() => actualizar((cs) => moverClip(cs, i, 1))} title="Después" data-test="clip-bajar">
+                  <ArrowDown size={15} />
+                </button>
+                <button type="button" style={icono} onClick={() => actualizar((cs) => duplicarClip(cs, i))} title="Usar otra parte de este mismo video" data-test="clip-duplicar">
+                  <Copy size={15} />
+                </button>
+                <button type="button" style={{ ...icono, color: "#B42318" }} onClick={() => actualizar((cs) => quitarClip(cs, i))} title="Sacar este clip" data-test="clip-quitar">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          )}
+          <Recortador clip={c} onChange={(nuevo) => actualizar((cs) => cs.map((x, k) => (k === i ? nuevo : x)))} />
+          {clips.length === 1 && (
+            <button type="button" style={{ ...boton, justifySelf: "start" }} onClick={() => actualizar((cs) => duplicarClip(cs, 0))} data-test="clip-duplicar">
+              <Copy size={14} /> Sumar otra parte de este video
+            </button>
+          )}
+        </div>
+      ))}
+
+      {clips.length > 1 && (
+        <p
+          style={{ fontSize: 14, color: "#1A1A2E", margin: 0, padding: "8px 10px", background: "#EEF2FF", borderRadius: 8 }}
+          data-test="duracion-total"
+        >
+          Los {clips.length} clips se ven uno detrás del otro: en total <strong>{fmtSeg(total)}</strong>.
+          {total > TOTAL_SUGERIDO_SEG && " Es largo para alguien que pasa por la góndola: conviene dejarlo en menos de un minuto."}
+        </p>
+      )}
+
       <div>
         <label style={{ ...boton, cursor: subiendo ? "wait" : "pointer" }}>
           <Film size={15} />
-          {subiendo ? "Revisando y subiendo…" : clip ? "Cambiar video" : "Subir video"}
+          {subiendo ? "Revisando y subiendo…" : clips.length > 0 ? "Agregar otro video" : "Subir video"}
           <input
             type="file"
             accept="video/*"
@@ -124,8 +174,6 @@ export default function VideoEditor({
           {aviso}
         </p>
       )}
-
-      {clip && <Recortador clip={clip} onChange={(c) => onChange([c, ...clips.slice(1)])} />}
     </div>
   );
 }
@@ -272,4 +320,9 @@ const boton: CSSProperties = {
   fontSize: 13,
   fontWeight: 600,
   cursor: "pointer",
+};
+
+const icono: CSSProperties = {
+  ...boton,
+  padding: 6,
 };

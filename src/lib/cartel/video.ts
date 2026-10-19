@@ -144,3 +144,32 @@ export function estiloVideo(encuadre: EncuadreVideo, foco: FocoVideo): { objectF
   const p = foco === "inicio" ? "0%" : foco === "fin" ? "100%" : "50%";
   return { objectFit: "cover", objectPosition: `${p} ${p}` };
 }
+
+/** Más de esto en total y el video se vuelve largo para alguien que pasa por la góndola. */
+export const TOTAL_SUGERIDO_SEG = 60;
+
+/** Sube (-1) o baja (+1) un tramo. Fuera de rango no hace nada. */
+export function moverClip(clips: Clip[], i: number, delta: -1 | 1): Clip[] {
+  const j = i + delta;
+  if (i < 0 || i >= clips.length || j < 0 || j >= clips.length) return clips;
+  const otra = [...clips];
+  [otra[i], otra[j]] = [otra[j], otra[i]];
+  return otra;
+}
+
+export function quitarClip(clips: Clip[], i: number): Clip[] {
+  return clips.filter((_, k) => k !== i);
+}
+
+/**
+ * Copia un tramo justo detrás del original, arrancando donde el original
+ * termina: es la forma de usar dos partes distintas de un mismo video sin
+ * subirlo dos veces.
+ */
+export function duplicarClip(clips: Clip[], i: number): Clip[] {
+  const c = clips[i];
+  if (!c) return clips;
+  const largo = c.hasta - c.desde;
+  const copia = acotarTramo({ ...c, desde: c.hasta, hasta: c.hasta + largo });
+  return [...clips.slice(0, i + 1), copia, ...clips.slice(i + 1)];
+}

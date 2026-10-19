@@ -746,7 +746,12 @@ export default function AdminShell({
 
                 {esVideo && (
                   <Campo etiqueta="Video">
-                    <VideoEditor clips={form.clips} onChange={(c) => set("clips", c)} supabase={supabase} onError={setError} />
+                    <VideoEditor
+                      clips={form.clips}
+                      actualizar={(cambio) => setForm((f) => ({ ...f, clips: cambio(f.clips) }))}
+                      supabase={supabase}
+                      onError={setError}
+                    />
                   </Campo>
                 )}
 

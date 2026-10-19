@@ -111,5 +111,27 @@ igual(o.estiloVideo("llenar", "inicio"), { objectFit: "cover", objectPosition: "
 igual(o.estiloVideo("llenar", "centro"), { objectFit: "cover", objectPosition: "50% 50%" }, "llenar al centro");
 igual(o.estiloVideo("llenar", "fin"), { objectFit: "cover", objectPosition: "100% 100%" }, "llenar hasta el fin: abajo / derecha");
 
+// ---- Unir clips (punto 6) ------------------------------------------------
+const l = v as unknown as {
+  moverClip: (c: Clip[], i: number, d: -1 | 1) => Clip[];
+  quitarClip: (c: Clip[], i: number) => Clip[];
+  duplicarClip: (c: Clip[], i: number) => Clip[];
+};
+const A = { url: "a", desde: 0, hasta: 2, duracion: 10 };
+const B = { url: "b", desde: 1, hasta: 3, duracion: 5 };
+const C = { url: "c", desde: 0, hasta: 4, duracion: 4 };
+const urls = (cs: Clip[]) => cs.map((x) => x.url).join("");
+igual(urls(l.moverClip([A, B, C], 2, -1)), "acb", "subir el último lo pone antes del anterior");
+igual(urls(l.moverClip([A, B, C], 0, 1)), "bac", "bajar el primero");
+igual(urls(l.moverClip([A, B, C], 0, -1)), "abc", "subir el primero no hace nada");
+igual(urls(l.moverClip([A, B, C], 2, 1)), "abc", "bajar el último no hace nada");
+igual(urls(l.quitarClip([A, B, C], 1)), "ac", "quitar el del medio");
+const dup = l.duplicarClip([A, B, C], 0);
+igual(urls(dup), "aabc", "duplicar deja la copia justo detrás");
+igual([dup[1].desde, dup[1].hasta], [2, 4], "la copia sigue donde terminó el original, con el mismo largo");
+const alFinal = l.duplicarClip([C], 0);
+igual([alFinal[1].desde, alFinal[1].hasta], [3, 4], "si el original llega al final, la copia queda adentro del video");
+igual(urls(l.duplicarClip([A], 5)), "a", "duplicar fuera de rango no hace nada");
+
 console.log(`\n${fallos === 0 ? "OK" : "FALLÓ"}: ${fallos} fallos.`);
 process.exit(fallos === 0 ? 0 : 1);

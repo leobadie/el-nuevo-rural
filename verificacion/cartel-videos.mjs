@@ -212,6 +212,40 @@ try {
     await a.waitForTimeout(1200);
     await previa.screenshot({ path: path.join(SALIDA, `previa-parada-${nombre}.png`) });
 
+    // ---- Paso 4: unir clips ---------------------------------------------
+    // Tenemos el tramo 1-4 (3 s). "Sumar otra parte" copia el tramo detrás,
+    // desde el 4: queda 4-6,1 porque el video dura 6,1.
+    await a.click('[data-test="clip-duplicar"]');
+    await a.waitForSelector('[data-test="duracion-total"]', { timeout: 5_000 });
+    const total = () => a.textContent('[data-test="duracion-total"]');
+    ok(/2 clips/.test((await total()) ?? "") && /5,1 s/.test((await total()) ?? ""), `${nombre}: otra parte del mismo video suma un clip`, (await total())?.trim());
+
+    // Otro archivo: se agrega al final.
+    await a.setInputFiles('[data-test="subir-video"]', H264);
+    await a.waitForFunction(() => document.querySelectorAll('[data-test="clip"]').length === 3, null, { timeout: 20_000 });
+    ok(/3 clips/.test((await total()) ?? "") && /11,2 s/.test((await total()) ?? ""), `${nombre}: otro video se agrega al final`, (await total())?.trim());
+
+    const durs = () => a.$$eval('[data-test="clip"] [data-test="duracion-recorte"]', (els) => els.map((e) => e.textContent.match(/dura ([\d,]+ s)/)?.[1]));
+    ok(JSON.stringify(await durs()) === JSON.stringify(["3 s", "2,1 s", "6,1 s"]), `${nombre}: cada clip con su recorte`, (await durs()).join(" / "));
+
+    // Subir el tercero: pasa a ser el segundo.
+    await a.locator('[data-test="clip"]').nth(2).locator('[data-test="clip-subir"]').click();
+    ok(JSON.stringify(await durs()) === JSON.stringify(["3 s", "6,1 s", "2,1 s"]), `${nombre}: un clip se puede subir de lugar`, (await durs()).join(" / "));
+
+    // Quitar el que quedó segundo.
+    await a.locator('[data-test="clip"]').nth(1).locator('[data-test="clip-quitar"]').click();
+    ok(JSON.stringify(await durs()) === JSON.stringify(["3 s", "2,1 s"]) && /5,1 s/.test((await total()) ?? ""), `${nombre}: un clip se puede sacar`, (await total())?.trim());
+
+    // La previa los pasa uno detrás del otro.
+    const tramosVistos = new Set();
+    for (let k = 0; k < 16; k++) {
+      tramosVistos.add(await previa.locator(".pl-video video").getAttribute("data-tramo"));
+      await a.waitForTimeout(500);
+    }
+    ok(tramosVistos.has("0") && tramosVistos.has("1"), `${nombre}: la previa reproduce los clips seguidos`, [...tramosVistos].join(","));
+    await a.locator('[data-test="editor-video"]').scrollIntoViewIfNeeded();
+    await a.screenshot({ path: path.join(SALIDA, `clips-${nombre}.png`) });
+
     // Guardar.
     await a.fill('input[placeholder="Video de la parrilla"]', `${MARCA} admin`);
     await a.click('button:has-text("Crear placa")');
@@ -231,7 +265,8 @@ try {
       .locator("xpath=following-sibling::div[1]")
       .textContent()
       .catch(() => "");
-    ok(/3s/.test(detalle ?? ""), `${nombre}: la lista muestra la duración del recorte`, detalle?.trim());
+    // Se guarda con los dos clips que quedaron: 3 + 2,1 s.
+    ok(/5\.1s/.test(detalle ?? ""), `${nombre}: la lista muestra la duración total de los clips`, detalle?.trim());
 
     const ancho = await a.evaluate(() => document.documentElement.scrollWidth);
     ok(ancho <= viewport.width, `${nombre}: sin scroll horizontal`, `${ancho}px`);

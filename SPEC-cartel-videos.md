@@ -139,3 +139,7 @@ que la app "haga videos por sí sola".
   `video_encuadre` (entero / llenar), `video_foco` (inicio / centro / fin) y `video_texto`
   (ninguno / arriba / abajo). La banda usa los datos de oferta de la misma placa; en TV
   acostado se achica (46% del alto con precio anterior y unidad). Previa parado/acostado.
+- **Paso 4 (unir clips): hecho** el 18/10/2026. Cada clip con su recorte, se agrega otro video
+  al final, se reordena, se saca, y "Sumar otra parte de este video" usa dos tramos del mismo
+  archivo sin subirlo dos veces. Aviso si el total pasa de un minuto. Sin migración nueva.
+- **Queda: paso 5 (Higgsfield)**, que espera la cuenta y la clave del usuario.
