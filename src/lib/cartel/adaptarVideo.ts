@@ -70,12 +70,13 @@ export type Adaptacion = {
  * 1080×1920 (o 1920×1080), 30 fps, ~6 Mbps, sin audio, MP4 con el índice al
  * principio y el giro aplicado a la imagen.
  */
-export async function prepararAdaptacion(archivo: File, ficha: FichaVideo): Promise<Adaptacion> {
+export async function prepararAdaptacion(archivo: File, ficha: FichaVideo, giro: 0 | 90 | 270 = 0): Promise<Adaptacion> {
   const mb = await import("mediabunny");
   const input = new mb.Input({ source: new mb.BlobSource(archivo), formats: mb.ALL_FORMATS });
   const destino = new mb.BufferTarget();
   const output = new mb.Output({ format: new mb.Mp4OutputFormat({ fastStart: "in-memory" }), target: destino });
-  const t = tamanoParaTele(ficha.ancho, ficha.alto);
+  // Girado, el video parado queda acostado: el tope se calcula sobre la forma final.
+  const t = giro ? tamanoParaTele(ficha.alto, ficha.ancho) : tamanoParaTele(ficha.ancho, ficha.alto);
 
   const conversion = await mb.Conversion.init({
     input,
@@ -85,6 +86,8 @@ export async function prepararAdaptacion(archivo: File, ficha: FichaVideo): Prom
       width: t.ancho,
       height: t.alto,
       fit: "contain",
+      // Para las teles paradas: el video llega girado de fábrica (punto 16).
+      ...(giro ? { rotate: giro } : {}),
       frameRate: Math.min(FPS_MAX_TELE, Math.round(ficha.fps ?? FPS_MAX_TELE)),
       bitrate: BITRATE_ADAPTADO,
       // El giro va en la imagen: hay teles que ignoran el dato de giro del archivo.
@@ -107,7 +110,7 @@ export async function prepararAdaptacion(archivo: File, ficha: FichaVideo): Prom
       } finally {
         input.dispose();
       }
-      const nombre = archivo.name.replace(/\.[^.]+$/, "") + "-tele.mp4";
+      const nombre = archivo.name.replace(/\.[^.]+$/, "") + (giro ? `-girado${giro}.mp4` : "-tele.mp4");
       return new File([destino.buffer!], nombre, { type: "video/mp4" });
     },
     cancelar() {

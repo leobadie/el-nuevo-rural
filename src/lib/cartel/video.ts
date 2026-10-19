@@ -244,6 +244,29 @@ export function estiloVideo(encuadre: EncuadreVideo, foco: FocoVideo): { objectF
   return { objectFit: "cover", objectPosition: `${p} ${p}` };
 }
 
+/**
+ * El encuadre de un video que ya viene girado de fábrica (SPEC-cartel-convertir-video.md,
+ * punto 17). Girar el archivo mueve sus bordes igual que el giro CSS de la placa:
+ * con 270 el borde de arriba queda a la izquierda y el izquierdo abajo; con 90, arriba
+ * queda a la derecha y el izquierdo arriba. La posición se traduce igual.
+ */
+export function estiloVideoGirado(
+  encuadre: EncuadreVideo,
+  foco: FocoVideo,
+  giro: 90 | 270,
+): { objectFit: "contain" | "cover"; objectPosition: string } {
+  const base = estiloVideo(encuadre, foco);
+  const [x, y] = base.objectPosition.split(" ").map((v) => parseFloat(v));
+  const [gx, gy] = giro === 270 ? [y, 100 - x] : [100 - y, x];
+  return { objectFit: base.objectFit, objectPosition: `${gx}% ${gy}%` };
+}
+
+/** La URL del clip para una tele con este giro, si hay versión girada. */
+export function urlGirada(clip: Clip, giro: number | null | undefined): string | null {
+  if (giro !== 90 && giro !== 270) return null;
+  return clip.girados?.[String(giro) as "90" | "270"] ?? null;
+}
+
 /** Más de esto en total y el video se vuelve largo para alguien que pasa por la góndola. */
 export const TOTAL_SUGERIDO_SEG = 60;
 

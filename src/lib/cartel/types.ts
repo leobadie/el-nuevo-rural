@@ -20,6 +20,11 @@ export type Clip = {
   bytes?: number | null;
   /** Lo que se detectó al subirlo: "h264", "vp9"… */
   codec?: string | null;
+  /**
+   * El mismo video ya girado, por giro de tele ("270", "90"). Las teles paradas
+   * no giran el video con CSS (SPEC-cartel-convertir-video.md, punto 16).
+   */
+  girados?: Partial<Record<"90" | "270", string>> | null;
 };
 
 export type Placa = {

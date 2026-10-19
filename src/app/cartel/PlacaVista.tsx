@@ -13,14 +13,19 @@ export default function PlacaVista({
   placa,
   onFin,
   quieto,
+  giro,
+  capa,
 }: {
   placa: Placa;
   /** Solo video: el TV avanza cuando el video termina, no por reloj. */
   onFin?: () => void;
   /** Solo video: modo captura, congelado en el primer cuadro. */
   quieto?: boolean;
+  /** Solo video: giro de la tele y capa sin girar para el video ya girado. */
+  giro?: number;
+  capa?: HTMLElement | null;
 }) {
-  if (placa.tipo === "video") return <PlacaVideo placa={placa} onFin={onFin} quieto={quieto} />;
+  if (placa.tipo === "video") return <PlacaVideo placa={placa} onFin={onFin} quieto={quieto} giro={giro} capa={capa} />;
   if (placa.tipo === "imagen") return <PlacaImagen placa={placa} />;
   if (placa.tipo === "oferta") return <PlacaOferta placa={placa} />;
   return <PlacaMensaje placa={placa} />;

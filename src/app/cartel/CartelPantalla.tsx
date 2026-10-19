@@ -16,6 +16,7 @@ import {
 } from "@/lib/cartel/placas";
 
 import { MIRAR_VINCULO_MS, claveDeLaTele, decidirVinculo, guardarPantalla } from "@/lib/cartel/tele";
+import { urlGirada } from "@/lib/cartel/video";
 import type { Rotacion } from "@/lib/cartel/placas";
 import type { EstadoTele } from "@/lib/cartel/tele";
 import type { Asignacion, Pantalla, Placa } from "@/lib/cartel/types";
@@ -113,6 +114,13 @@ export default function CartelPantalla({
   const placa = placas[posicion];
   const clave = placa ? `${placa.id}:${posicion}` : "";
   const saliendo = saliendoDe === clave;
+
+  // Capa sin girar para el video de las teles paradas: su circuito de video
+  // ignora el giro por CSS, así que el video llega girado de fábrica y se dibuja
+  // acá, debajo de la placa (SPEC-cartel-convertir-video.md, punto 17).
+  const [capaVideo, setCapaVideo] = useState<HTMLDivElement | null>(null);
+  const videoAparte =
+    !modoCaptura && placa?.tipo === "video" && (placa.clips ?? []).some((c) => urlGirada(c, giro) != null);
 
   // ---- Rotación ----------------------------------------------------------
   // El timeout se rearma con la duración de la placa actual. Cuando la lista
@@ -422,6 +430,7 @@ export default function CartelPantalla({
 
   return (
     <div className={giro ? `cartel-fondo cartel-rotado-${giro}` : "cartel-fondo"}>
+      <div ref={setCapaVideo} className="cartel-capa-video" />
       {/* Con sección, el color fuerte va en la franja de arriba y no en toda la
           placa: un fondo rojo a pantalla completa cansa la vista y le come
           protagonismo al precio. */}
@@ -439,7 +448,14 @@ export default function CartelPantalla({
           background:
             // Negro detrás de un cartel ajeno: el azul de la marca chocaría con
             // el color que traiga la imagen.
-            placa.tipo === "imagen" || placa.tipo === "video" ? "#000" : placa.seccion ? FONDO_BASE : placa.color || NAVY,
+            // Con el video en la capa de abajo, la placa tiene que dejarlo ver.
+            videoAparte
+              ? "transparent"
+              : placa.tipo === "imagen" || placa.tipo === "video"
+                ? "#000"
+                : placa.seccion
+                  ? FONDO_BASE
+                  : placa.color || NAVY,
         }}
         data-placa={placa.id}
         data-total={placas.length}
@@ -499,6 +515,8 @@ export default function CartelPantalla({
             placa={placa}
             onFin={modoCaptura ? undefined : terminarVideo}
             quieto={modoCaptura}
+            giro={giro}
+            capa={capaVideo}
           />
         </main>
 

@@ -1009,3 +1009,22 @@
   text-align: center;
   pointer-events: none;
 }
+
+/* Video de las teles paradas (SPEC-cartel-convertir-video.md, punto 17): llega
+   girado de fábrica y se dibuja en esta capa, que no gira y ocupa la pantalla.
+   La placa de encima queda transparente para dejarlo ver. */
+.cartel-capa-video {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cartel-capa-video video {
+  width: 100%;
+  height: 100%;
+}
+
+.pl-video-aparte {
+  background: transparent;
+}

@@ -84,3 +84,30 @@ H.264 dentro de la app"): ahora se puede, donde el navegador sepa leer HEVC.
 - Con el video real que dejó en negro a Carnicería 1: 3,8 s en la compu, 22,7 MB → 11,8 MB.
 - Ojo para pruebas: WebCodecs solo existe en páginas seguras (https o localhost).
 - **Pendiente:** probar desde un celular real y ver el resultado en Carnicería 1.
+- **Puntos 15-18 hechos el 19/10/2026** tras la prueba en Carnicería 1: `verificar:cartel-adaptar-video` comprueba que la copia girada mide 1920×886, queda girada para el mismo lado que la placa (rojo arriba → izquierda) y que la tele parada la dibuja en la capa sin girar, a pantalla completa, con la placa transparente encima.
+
+## 7. Teles paradas: el video llega girado de fábrica (19/10/2026, tras probar en Carnicería 1)
+
+En la LG de Carnicería 1 (navegador Chrome 94, montada parada, giro 270) las placas
+comunes salen derechas pero **el video sale de costado**: la tele dibuja el video en un
+circuito aparte que ignora el giro por CSS. Además, ese circuito informa 0 cuadros
+dibujados aunque el video se vea, y el salto del punto 14 lo cortaba a los ~8 s.
+
+15. **El salto del punto 14 mira solo si el tiempo avanza**, no los cuadros dibujados.
+16. **Versión girada.** Al subir un video, si hay pantallas activas montadas paradas, se
+    genera además una copia del video **ya girada** con el mismo giro (270 o 90), del mismo
+    largo, y se guarda junto al clip (`girados: { "270": url }`). Sin migración: va dentro
+    de `clips`. Se ve en la barra de avance ("Preparando la versión para teles paradas…").
+17. **En la tele parada**, si el clip tiene la versión de su giro, el video se dibuja en una
+    capa **sin girar** que ocupa toda la pantalla, por debajo de la placa; la placa (y el
+    precio encima) sigue girada como siempre, con fondo transparente. El encuadre (llenar
+    o entero, y qué parte queda) se traduce a la versión girada.
+18. Si el clip no tiene versión girada (videos subidos antes, o un navegador que no pudo
+    generarla), se ve como hasta ahora.
+19. Fuera de alcance: generar las versiones giradas de los videos ya subidos (se suben de
+    nuevo).
+
+**Estado de los puntos 15-18: hechos el 19/10/2026.** `verificar:cartel-adaptar-video` comprueba que la copia girada
+mide 1920×886, queda girada para el mismo lado que la placa (rojo arriba → izquierda) y que la tele
+parada la dibuja en la capa sin girar, a pantalla completa, con la placa transparente encima.
+Pendiente: verlo en Carnicería 1.

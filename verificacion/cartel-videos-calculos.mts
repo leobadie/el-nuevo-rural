@@ -34,6 +34,8 @@ const v = cargar("src/lib/cartel/video.ts", { "./types": {} }) as {
   nivelH264: (s: string | null) => number | null;
   tamanoParaTele: (ancho: number, alto: number) => { ancho: number; alto: number };
   motivosParaAdaptar: (f: Record<string, unknown>) => { texto: string; grave: boolean }[];
+  estiloVideoGirado: (encuadre: string, foco: string, giro: 90 | 270) => { objectFit: string; objectPosition: string };
+  urlGirada: (clip: Record<string, unknown>, giro: number | null) => string | null;
 };
 const p = cargar("src/lib/cartel/placas.ts", { "./types": {} }) as {
   duracionMs: (placa: Record<string, unknown>) => number;
@@ -101,6 +103,20 @@ igual(v.motivosParaAdaptar(ficha({ fps: 60 })).map((m) => m.grave), [false], "60
 igual(v.motivosParaAdaptar(ficha({ fps: 30.02 })), [], "30,02 fps (redondeo del celular) no cuenta como más de 30");
 igual(v.motivosParaAdaptar(ficha({ esMp4: false })).length, 1, "un MOV se pasa a MP4");
 igual(v.motivosParaAdaptar(ficha({ girado: true })).length, 1, "un video girado por metadatos se adapta");
+
+// ---- Versión girada para las teles paradas (punto 17) ----
+igual(v.estiloVideoGirado("entero", "centro", 270), { objectFit: "contain", objectPosition: "50% 50%" }, "entero: centrado, con cualquier giro");
+// Con 270 el borde de arriba del video queda a la izquierda de la pantalla.
+igual(v.estiloVideoGirado("llenar", "inicio", 270).objectPosition, "0% 100%", "270, mostrar el principio (arriba) → queda a la izquierda");
+igual(v.estiloVideoGirado("llenar", "fin", 270).objectPosition, "100% 0%", "270, mostrar el final (abajo) → queda a la derecha");
+// Con 90 el borde de arriba queda a la derecha.
+igual(v.estiloVideoGirado("llenar", "inicio", 90).objectPosition, "100% 0%", "90, mostrar el principio (arriba) → queda a la derecha");
+igual(v.estiloVideoGirado("llenar", "centro", 90), { objectFit: "cover", objectPosition: "50% 50%" }, "llenar centrado sigue centrado");
+const conGirada = { url: "a.mp4", girados: { "270": "a-g270.mp4" } };
+igual(v.urlGirada(conGirada, 270), "a-g270.mp4", "una tele con giro 270 usa la versión girada");
+igual(v.urlGirada(conGirada, 90), null, "con giro 90 y sin esa versión, no hay girada (se ve como antes)");
+igual(v.urlGirada(conGirada, 0), null, "una tele sin giro usa el video normal");
+igual(v.urlGirada({ url: "viejo.mp4" }, 270), null, "un video subido antes no tiene girada");
 
 // ---- Peso (punto 3) ------------------------------------------------------
 igual(ok("h264", v.MAX_BYTES_VIDEO), true, "justo 50 MB se sube");

@@ -108,8 +108,11 @@ async function fabricarVideo(ancho, alto, fps, segundos) {
       out.addVideoTrack(src, { frameRate: fps });
       await out.start();
       for (let f = 0; f < fps * segundos; f++) {
-        g.fillStyle = `hsl(${(f * 4) % 360},70%,45%)`;
-        g.fillRect(0, 0, ancho, alto);
+        // Arriba rojo y abajo azul: así se puede comprobar para qué lado quedó girada la copia.
+        g.fillStyle = "#e00000";
+        g.fillRect(0, 0, ancho, alto / 2);
+        g.fillStyle = "#0000e0";
+        g.fillRect(0, alto / 2, ancho, alto / 2);
         g.fillStyle = "#fff";
         g.font = `${Math.round(ancho / 4)}px sans-serif`;
         g.fillText(String(f), ancho / 4, alto / 2);
@@ -170,6 +173,11 @@ try {
     // Del editor, no de la página: en el celular queda muy abajo.
     if (vioAvance) await a.locator('[data-test="editor-video"]').screenshot({ path: path.join(SALIDA, `adaptando-${nombre}.png`) }).catch(() => {});
 
+    const vioGirado = await a
+      .waitForSelector('[data-test="adaptando-etapa"]:has-text("teles paradas")', { timeout: 120_000 })
+      .then(() => true)
+      .catch(() => false);
+    ok(vioGirado, `${nombre}: con teles paradas, prepara también la versión girada ("…teles paradas")`);
     await a.waitForSelector('[data-test="recortador-video"]', { timeout: 120_000 });
     const aviso = await a.textContent('[data-test="aviso-video"]').catch(() => null);
     ok(/Lo adaptamos/.test(aviso ?? "") && /1080×2336 → 886×1920/.test(aviso ?? ""), `${nombre}: avisa qué se cambió (1080×2336 → 886×1920)`, aviso ?? "sin aviso");
@@ -192,6 +200,45 @@ try {
       ok(!f.audio, `${nombre}: sin audio`);
       ok(f.moovPrimero, `${nombre}: con el índice al principio (arranca sin bajar todo)`);
       ok(subido.ancho === 886 && subido.alto === 1920, `${nombre}: el navegador lo reproduce`, `${subido.ancho}×${subido.alto}`);
+      if (nombre === "desktop") fs.writeFileSync(path.join(os.tmpdir(), "cartel-adaptado.mp4"), Buffer.from(subido.bytes));
+    }
+
+    // La versión girada para las teles paradas (giro 270, como las del local).
+    const girada = await a.evaluate(async () => {
+      const clip = [...document.querySelectorAll('[data-test="clip"]')].pop();
+      const url = JSON.parse(clip?.dataset.girados || "{}")["270"];
+      if (!url) return null;
+      const buf = await (await fetch(url)).arrayBuffer();
+      // Qué color queda a la izquierda y a la derecha del cuadro.
+      const v = document.createElement("video");
+      v.muted = true;
+      v.src = url;
+      await new Promise((r) => v.addEventListener("loadeddata", r, { once: true }));
+      v.currentTime = 0.5;
+      await new Promise((r) => v.addEventListener("seeked", r, { once: true }));
+      // El cuadro puede no estar dibujado todavía justo después de "seeked".
+      await new Promise((r) => setTimeout(r, 500));
+      const c = document.createElement("canvas");
+      c.width = v.videoWidth;
+      c.height = v.videoHeight;
+      const g = c.getContext("2d");
+      g.drawImage(v, 0, 0);
+      const color = (fx, fy) => {
+        const [r, , b] = g.getImageData(Math.round(c.width * fx), Math.round(c.height * fy), 1, 1).data;
+        if (r < 60 && b < 60) return "negro";
+        return r > b ? "rojo" : "azul";
+      };
+      return { bytes: Array.from(new Uint8Array(buf)), izquierda: color(0.1, 0.5), derecha: color(0.9, 0.5) };
+    });
+    if (!girada) {
+      ok(false, `${nombre}: el clip tiene versión girada para 270`);
+    } else {
+      const f = fichaMp4(Uint8Array.from(girada.bytes));
+      ok(f.ancho === 1920 && f.alto === 886, `${nombre}: la versión girada mide 1920×886 (acostada)`, `${f.ancho}×${f.alto}`);
+      ok(f.nivel != null && f.nivel <= 4.1 && !f.audio, `${nombre}: …H.264 nivel ≤ 4.1 y sin audio`, `nivel ${f.nivel}`);
+      // Con 270 el borde de arriba del video (rojo) queda a la izquierda, igual que la placa girada por CSS.
+      ok(girada.izquierda === "rojo" && girada.derecha === "azul", `${nombre}: …girada para el mismo lado que la placa (arriba → izquierda)`, `${girada.izquierda} | ${girada.derecha}`);
+      if (nombre === "desktop") fs.writeFileSync(path.join(os.tmpdir(), "cartel-girado270.mp4"), Buffer.from(girada.bytes));
     }
     await a.locator('[data-test="editor-video"]').screenshot({ path: path.join(SALIDA, `adaptado-${nombre}.png`) });
 
@@ -262,6 +309,67 @@ try {
     const dura = i >= 0 && reg[i + 1] ? Math.round(reg[i + 1].t - reg[i].t) : null;
     ok(dura != null && dura < 12_000, "un video que no avanza ni da error se saltea en segundos (antes ~45 s)", dura == null ? "no se salteó" : `${dura} ms`);
     await ctx.close();
+  }
+
+  // ======================================================================
+  // Parte C — la tele parada usa la versión girada, en la capa sin girar
+  // ======================================================================
+  const adaptado = path.join(os.tmpdir(), "cartel-adaptado.mp4");
+  const girado = path.join(os.tmpdir(), "cartel-girado270.mp4");
+  if (!admin || !fs.existsSync(adaptado) || !fs.existsSync(girado)) {
+    skip("Parte C (tele parada)", "faltan la base o los videos de la parte A");
+  } else {
+    await limpiarBase();
+    const subir = async (nombre, archivo) => {
+      await admin.storage.from("cartel").upload(nombre, fs.readFileSync(archivo), { contentType: "video/mp4", upsert: true });
+      return admin.storage.from("cartel").getPublicUrl(nombre).data.publicUrl;
+    };
+    const urlParado = await subir("zz-prueba-adaptar.mp4", adaptado);
+    const urlGirado = await subir("zz-prueba-adaptar-girado270.mp4", girado);
+    await admin.from("cartel_pantallas").insert({ slug: SLUG, nombre: "ZZPRUEBA adaptar", seccion: "ZZPrueba", orden: 9501, rotacion: 270 });
+    const { data: creadas } = await admin
+      .from("cartel_placas")
+      .insert([
+        {
+          titulo: `${MARCA} girado`, tipo: "video", duracion_seg: 3, orden: 9501, activa: true,
+          clips: [{ url: urlParado, girados: { 270: urlGirado }, desde: 0, hasta: 3, duracion: 3 }],
+        },
+      ])
+      .select("id");
+    await admin.from("cartel_placa_pantalla").insert(creadas.map((p) => ({ placa_id: p.id, pantalla_slug: SLUG })));
+
+    const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    await ctx.route(/\/rest\/v1\/rpc\/cartel_latido/, (r) => r.abort());
+    const t = await ctx.newPage();
+    await t.goto(`${BASE}/cartel/tv/${SLUG}`, { waitUntil: "load", timeout: 60_000 });
+    const enCapa = await t.waitForSelector(".cartel-capa-video video", { timeout: 30_000 }).then(() => true).catch(() => false);
+    ok(enCapa, "tele parada: el video va en la capa sin girar");
+    if (enCapa) {
+      const info = await t.$eval(".cartel-capa-video video", (v) => {
+        const r = v.getBoundingClientRect();
+        const capa = v.closest(".cartel-capa-video");
+        return {
+          src: v.currentSrc || v.src,
+          girado: v.dataset.girado,
+          rect: `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)}`,
+          // La capa no puede tener ningún giro encima: es lo que la tele ignora.
+          sinGiro: getComputedStyle(capa).transform === "none" && getComputedStyle(capa.parentElement).transform === "none",
+          fondoPlaca: getComputedStyle(document.querySelector(".cartel-marco")).backgroundColor,
+        };
+      });
+      ok(/girado270/.test(info.src) && info.girado === "270", "…con la versión girada 270", info.src.split("/").pop());
+      ok(info.rect === "0,0 1920×1080", "…ocupando toda la pantalla", info.rect);
+      ok(info.sinGiro, "…sin ningún giro por CSS");
+      ok(/rgba\(0, 0, 0, 0\)|transparent/.test(info.fondoPlaca), "…y la placa de encima transparente para dejarlo ver", info.fondoPlaca);
+      await t.screenshot({ path: path.join(SALIDA, "tele-parada-girado.png") });
+    }
+    // Una tele acostada (sin giro) sigue usando el video normal, dentro de la placa.
+    await t.goto(`${BASE}/cartel/tv/${SLUG}?rotar=0`, { waitUntil: "load", timeout: 60_000 });
+    await t.waitForSelector(".cartel-marco video:not(.cartel-despierto)", { timeout: 30_000 });
+    const normal = await t.$eval(".cartel-marco video:not(.cartel-despierto)", (v) => ({ src: v.currentSrc || v.src, enCapa: !!document.querySelector(".cartel-capa-video video") }));
+    ok(!/girado/.test(normal.src) && !normal.enCapa, "tele sin giro: usa el video normal, dentro de la placa", normal.src.split("/").pop());
+    await ctx.close();
+    await admin.storage.from("cartel").remove(["zz-prueba-adaptar.mp4", "zz-prueba-adaptar-girado270.mp4"]);
   }
 } finally {
   await limpiarBase();

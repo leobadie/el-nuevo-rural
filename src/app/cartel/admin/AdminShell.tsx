@@ -780,6 +780,14 @@ export default function AdminShell({
                       actualizar={(cambio) => setForm((f) => ({ ...f, clips: cambio(f.clips) }))}
                       supabase={supabase}
                       onError={setError}
+                      // Teles paradas: el video se prepara también girado (SPEC-cartel-convertir-video.md, punto 16).
+                      giros={[
+                        ...new Set(
+                          pantallasIniciales
+                            .filter((p) => p.activa && (p.rotacion === 90 || p.rotacion === 270))
+                            .map((p) => p.rotacion as 90 | 270),
+                        ),
+                      ]}
                     />
                   </Campo>
                 )}

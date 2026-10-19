@@ -35,8 +35,11 @@ export default function VideoEditor({
   actualizar,
   supabase,
   onError,
+  giros = [],
 }: {
   clips: Clip[];
+  /** Giros de las teles paradas activas (270, 90): para cada uno se prepara una versión girada. */
+  giros?: (90 | 270)[];
   /**
    * Cambia la lista a partir de la vigente y no de una copia: una subida tarda,
    * y mientras tanto se puede seguir recortando otro clip sin que se pierda.
@@ -49,6 +52,7 @@ export default function VideoEditor({
   const [aviso, setAviso] = useState<string | null>(null);
   // null = no se está adaptando; 0 a 1 = avance de la conversión.
   const [adaptando, setAdaptando] = useState<number | null>(null);
+  const [etapa, setEtapa] = useState("Adaptando el video para las teles…");
   const cancelarAdaptacion = useRef<(() => void) | null>(null);
 
   async function subir(original: File) {
@@ -73,6 +77,7 @@ export default function VideoEditor({
       const motivos = ficha ? motivosParaAdaptar(ficha) : [];
       if (ficha && motivos.length > 0) {
         if (await puedeAdaptar(original)) {
+          setEtapa("Adaptando el video para las teles…");
           setAdaptando(0);
           const adaptacion = await prepararAdaptacion(original, ficha);
           cancelarAdaptacion.current = adaptacion.cancelar;
@@ -109,20 +114,51 @@ export default function VideoEditor({
         return;
       }
 
+      // ---- Versión girada para las teles paradas (punto 16) ----
+      // Su circuito de video ignora el giro por CSS: el video tiene que llegar
+      // girado de fábrica. Se hace antes de subir nada, así Cancelar no deja
+      // archivos sueltos.
+      const paraGirar: Partial<Record<"90" | "270", File>> = {};
+      let notaGiro: string | null = null;
+      if (giros.length > 0) {
+        if (ficha && (await puedeAdaptar(original))) {
+          for (const g of giros) {
+            setEtapa("Preparando la versión para las teles paradas…");
+            setAdaptando(0);
+            const adaptacion = await prepararAdaptacion(original, ficha, g);
+            cancelarAdaptacion.current = adaptacion.cancelar;
+            paraGirar[String(g) as "90" | "270"] = await adaptacion.correr((p) => setAdaptando(p));
+          }
+        } else {
+          notaGiro =
+            "Este navegador no pudo preparar la versión para las teles paradas: ahí el video se va a ver de costado. " +
+            "Subilo desde Chrome en la compu.";
+        }
+      }
+
+      const base = `video-${crypto.randomUUID()}`;
       const ext = archivo.name.split(".").pop()?.toLowerCase() || "mp4";
-      const nombre = `video-${crypto.randomUUID()}.${ext}`;
+      const nombre = `${base}.${ext}`;
       // Caché de un año: el archivo no cambia nunca (recortar cambia la placa,
       // no el archivo), y así cada televisor lo baja una sola vez.
-      const { error } = await supabase.storage.from("cartel").upload(nombre, archivo, {
-        cacheControl: "31536000",
-        contentType: archivo.type || "video/mp4",
-        upsert: false,
-      });
-      if (error) throw error;
+      const subirArchivo = async (n: string, f: File) => {
+        const { error } = await supabase.storage.from("cartel").upload(n, f, {
+          cacheControl: "31536000",
+          contentType: f.type || "video/mp4",
+          upsert: false,
+        });
+        if (error) throw error;
+        return supabase.storage.from("cartel").getPublicUrl(n).data.publicUrl;
+      };
+      const url = await subirArchivo(nombre, archivo);
+      const girados: Partial<Record<"90" | "270", string>> = {};
+      for (const [g, f] of Object.entries(paraGirar) as ["90" | "270", File][]) {
+        girados[g] = await subirArchivo(`${base}-girado${g}.mp4`, f);
+      }
 
-      const { data } = supabase.storage.from("cartel").getPublicUrl(nombre);
       const nuevo = acotarTramo({
-        url: data.publicUrl,
+        url,
+        ...(Object.keys(girados).length > 0 ? { girados } : {}),
         desde: 0,
         hasta: Math.min(meta.duracion, 60),
         duracion: meta.duracion,
@@ -133,7 +169,7 @@ export default function VideoEditor({
       });
       // Se agrega al final: unir clips es subir uno detrás del otro.
       actualizar((cs) => [...cs, nuevo]);
-      setAviso([nota, avisoResolucion(meta.ancho, meta.alto), veredicto.aviso].filter(Boolean).join(" ") || null);
+      setAviso([nota, notaGiro, avisoResolucion(meta.ancho, meta.alto), veredicto.aviso].filter(Boolean).join(" ") || null);
     } catch (e) {
       if (fueCancelado(e)) onError("Cancelado: el video no se subió.");
       else onError(`No se pudo subir el video: ${(e as Error).message}`);
@@ -149,7 +185,7 @@ export default function VideoEditor({
   return (
     <div style={{ display: "grid", gap: 10 }} data-test="editor-video">
       {clips.map((c, i) => (
-        <div key={`${c.url}:${i}`} style={{ display: "grid", gap: 6 }} data-test="clip">
+        <div key={`${c.url}:${i}`} style={{ display: "grid", gap: 6 }} data-test="clip" data-girados={JSON.stringify(c.girados ?? {})}>
           {clips.length > 1 && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
               <strong style={{ fontSize: 13, color: "#1A1A2E" }}>
@@ -223,7 +259,8 @@ export default function VideoEditor({
         <div style={{ display: "grid", gap: 6, padding: "8px 10px", background: "#EEF2FF", borderRadius: 8 }} data-test="adaptando">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 13 }}>
             <span>
-              Adaptando el video para las teles… <strong data-test="adaptando-avance">{Math.round(adaptando * 100)}%</strong>
+              <span data-test="adaptando-etapa">{etapa}</span>{" "}
+              <strong data-test="adaptando-avance">{Math.round(adaptando * 100)}%</strong>
             </span>
             <button
               type="button"

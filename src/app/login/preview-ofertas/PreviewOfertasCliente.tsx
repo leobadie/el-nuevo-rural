@@ -45,7 +45,8 @@ function haceMinutos(min: number): string {
 }
 
 const PANTALLAS: Pantalla[] = [
-  { slug: "carniceria-1", nombre: "Carnicería 1", seccion: "Carnicería", activa: true, orden: 1 },
+  // Parada, como las del local: los videos se preparan también girados.
+  { slug: "carniceria-1", nombre: "Carnicería 1", seccion: "Carnicería", activa: true, orden: 1, rotacion: 270 },
   { slug: "carniceria-2", nombre: "Carnicería 2", seccion: "Carnicería", activa: true, orden: 2 },
   { slug: "acceso", nombre: "Acceso", seccion: null, activa: true, orden: 3 },
 ];
