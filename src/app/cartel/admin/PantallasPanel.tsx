@@ -1,14 +1,40 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { Check, Copy, Monitor, Pencil, X } from "lucide-react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { Check, Copy, Eye, Link2, Monitor, Pencil, X } from "lucide-react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { NAVY, SECCIONES_SUGERIDAS, estadoTv, navegadorCorto } from "@/lib/cartel/placas";
-import type { Latido, Pantalla } from "@/lib/cartel/types";
+import type { Dispositivo, Latido, Pantalla } from "@/lib/cartel/types";
 
 /** Cada cuánto el admin vuelve a mirar qué televisores están prendidos. */
 const MIRAR_LATIDOS_MS = 60 * 1000;
+
+/**
+ * Cada cuánto se releen las teles vinculadas y las que esperan código. Corto:
+ * quien vincula está parado frente a la tele esperando verla aparecer.
+ */
+const MIRAR_TELES_MS = 5 * 1000;
+
+/** La dirección del sitio no cambia mientras la página está abierta. */
+const sinSuscripcion = () => () => {};
+
+/** "hace 20 s", "hace 3 min", "hace 2 h", "hace 4 días". */
+function haceCuanto(iso: string, ahora: number): string {
+  const seg = Math.max(0, Math.round((ahora - new Date(iso).getTime()) / 1000));
+  if (seg < 60) return `hace ${seg} s`;
+  if (seg < 3600) return `hace ${Math.round(seg / 60)} min`;
+  if (seg < 86400) return `hace ${Math.round(seg / 3600)} h`;
+  return `hace ${Math.round(seg / 86400)} días`;
+}
+
+/** Mensaje de error de las funciones de la base, sin el prefijo técnico. */
+function mensajeDeBase(msg: string): string {
+  if (msg.includes("cartel_vincular") && msg.includes("does not exist")) {
+    return "Falta aplicar la migración 031 en Supabase.";
+  }
+  return msg;
+}
 
 function horaCorta(iso: string): string {
   const d = new Date(iso);
@@ -114,6 +140,112 @@ export default function PantallasPanel({
   // Hasta la primera lectura todos figuran "nunca": la marca le dice a la
   // verificación que ya puede creerle a lo que ve.
   const [latidosLeidos, setLatidosLeidos] = useState(false);
+
+  // ---- Teles vinculadas por código (migración 031) ----
+  // null = todavía no se leyó o falta la migración: la sección no se muestra.
+  const [teles, setTeles] = useState<Dispositivo[] | null>(null);
+  const [codigo, setCodigo] = useState("");
+  const [destino, setDestino] = useState("");
+  const [vinculando, setVinculando] = useState(false);
+  const [vueltaTeles, setVueltaTeles] = useState(0);
+  // En el servidor no hay window: vacío ahí, y React lo completa sin marcar diferencia.
+  const host = useSyncExternalStore(
+    sinSuscripcion,
+    () => window.location.host,
+    () => "",
+  );
+
+  useEffect(() => {
+    let vivo = true;
+    let id: number | undefined;
+    async function mirar() {
+      const { data, error } = await supabase
+        .from("cartel_dispositivos")
+        .select("codigo, pantalla_slug, visto_el, vinculado_el, navegador, ancho, alto");
+      if (!vivo) return;
+      if (error) {
+        // Sin la migración 031 la tabla no existe: no se insiste cada 5 s.
+        console.error("cartel/admin: no se pudieron leer las teles:", error.message);
+        return;
+      }
+      setTeles((data ?? []) as Dispositivo[]);
+      setAhora(Date.now());
+      id = window.setTimeout(mirar, MIRAR_TELES_MS);
+    }
+    mirar();
+    return () => {
+      vivo = false;
+      window.clearTimeout(id);
+    };
+  }, [supabase, vueltaTeles]);
+
+  const esperando = (teles ?? [])
+    .filter((t) => !t.pantalla_slug)
+    .sort((a, b) => b.visto_el.localeCompare(a.visto_el));
+  const activas = pantallas
+    .filter((p) => p.activa)
+    .sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, "es"));
+
+  async function vincular() {
+    const cod = codigo.replace(/\D/g, "");
+    if (cod.length !== 4) {
+      onError("El código tiene 4 cifras: es el número grande que muestra la tele.");
+      return;
+    }
+    if (!destino) {
+      onError("Elegí qué televisor es.");
+      return;
+    }
+    setVinculando(true);
+    onError(null);
+    const { error } = await supabase.rpc("cartel_vincular", { p_codigo: cod, p_slug: destino });
+    setVinculando(false);
+    if (error) {
+      onError(`No se pudo vincular: ${mensajeDeBase(error.message)}`);
+      return;
+    }
+    const nombre = pantallas.find((p) => p.slug === destino)?.nombre ?? destino;
+    onAviso(`Listo: la tele ${cod} es ${nombre}. En unos segundos muestra su nombre en grande.`);
+    setCodigo("");
+    setDestino("");
+    setVueltaTeles((v) => v + 1);
+  }
+
+  async function identificar(p: Pantalla) {
+    const { error } = await supabase.rpc("cartel_identificar", { p_slug: p.slug });
+    if (error) {
+      onError(`No se pudo identificar: ${mensajeDeBase(error.message)}`);
+      return;
+    }
+    onAviso(`${p.nombre}: en menos de 15 segundos muestra su nombre en grande, durante 30 segundos.`);
+  }
+
+  async function mover(t: Dispositivo, slug: string) {
+    const { error } = await supabase
+      .from("cartel_dispositivos")
+      .update({ pantalla_slug: slug, vinculado_el: new Date().toISOString() })
+      .eq("codigo", t.codigo);
+    if (error) {
+      onError(`No se pudo mover: ${error.message}`);
+      return;
+    }
+    // Que muestre el nombre al llegar, igual que al vincularla.
+    await supabase.rpc("cartel_identificar", { p_slug: slug });
+    const nombre = pantallas.find((p) => p.slug === slug)?.nombre ?? slug;
+    onAviso(`La tele ${t.codigo} pasa a mostrar ${nombre} en menos de 15 segundos.`);
+    setVueltaTeles((v) => v + 1);
+  }
+
+  async function desvincular(t: Dispositivo) {
+    if (!window.confirm(`¿Desvincular la tele ${t.codigo}? Va a volver a mostrar un código.`)) return;
+    const { error } = await supabase.from("cartel_dispositivos").delete().eq("codigo", t.codigo);
+    if (error) {
+      onError(`No se pudo desvincular: ${error.message}`);
+      return;
+    }
+    onAviso(`Tele ${t.codigo} desvinculada: en menos de 15 segundos muestra un código nuevo.`);
+    setVueltaTeles((v) => v + 1);
+  }
 
   // Qué televisores están prendidos. Si la migración 027 no está aplicada la
   // consulta falla y la lista sigue andando, solo que sin el estado.
@@ -263,9 +395,87 @@ export default function PantallasPanel({
       </h2>
 
       <p style={{ fontSize: 13, color: "#666", margin: "0 0 12px" }}>
-        Cada televisor abre su propia dirección y muestra lo de su sector. Los que no
-        tienen sector muestran todo lo que no esté asignado a otro.
+        Cada televisor muestra lo de su sector. Los que no tienen sector muestran todo
+        lo que no esté asignado a otro. Con el ojo, la tele muestra su nombre en grande.
       </p>
+
+      {/* ---------- Vincular por código ---------- */}
+      {teles && (
+        <div style={cajaVincular} data-test="vincular">
+          <div style={{ fontWeight: 800, color: NAVY, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+            <Link2 size={15} /> Vincular una tele
+          </div>
+          <p style={{ fontSize: 12, color: "#475569", margin: "4px 0 10px" }}>
+            En la tele abrí <strong>{host}/tv</strong>.
+            Va a mostrar un número grande: escribilo acá y elegí qué televisor es.
+          </p>
+          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={etiqueta}>Código de la tele</span>
+              <input
+                style={{ ...input, fontSize: 18, fontWeight: 700, letterSpacing: 2 }}
+                inputMode="numeric"
+                maxLength={4}
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="0000"
+                data-test="codigo"
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={etiqueta}>Es el televisor…</span>
+              <select style={input} value={destino} onChange={(e) => setDestino(e.target.value)} data-test="destino">
+                <option value="">Elegí</option>
+                {activas.map((p) => (
+                  <option key={p.slug} value={p.slug}>
+                    {p.nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={vincular}
+            disabled={vinculando}
+            style={{ ...botonPrimario, marginTop: 10 }}
+            data-test="vincular-boton"
+          >
+            {vinculando ? "Vinculando…" : "Vincular"}
+          </button>
+
+          <div style={{ marginTop: 12 }}>
+            <div style={etiqueta}>Teles esperando que las vinculen</div>
+            {esperando.length === 0 ? (
+              <p style={{ fontSize: 12, color: "#94A3B8", margin: "4px 0 0" }}>
+                Ninguna. Cuando una tele abra /tv aparece acá en unos segundos.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                {esperando.map((t) => (
+                  <button
+                    key={t.codigo}
+                    type="button"
+                    onClick={() => setCodigo(t.codigo)}
+                    style={{
+                      ...chipTele,
+                      borderColor: codigo === t.codigo ? NAVY : "#CBD5E1",
+                    }}
+                    title="Usar este código"
+                    data-test="tele-esperando"
+                  >
+                    <strong style={{ fontSize: 16, letterSpacing: 1 }}>{t.codigo}</strong>
+                    <span style={{ fontSize: 11, color: "#64748B" }}>
+                      {t.ancho && t.alto ? `${t.ancho}×${t.alto} · ` : ""}
+                      {haceCuanto(t.visto_el, ahora)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ---------- Lista ---------- */}
       <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
@@ -302,9 +512,51 @@ export default function PantallasPanel({
                 {p.rotacion ? ` · ${GIROS.find((g) => g.valor === p.rotacion)?.texto.toLowerCase()}` : ""}
               </div>
               {p.activa && <EstadoTvLinea latido={latidos[p.slug]} ahora={ahora} />}
+              {(teles ?? [])
+                .filter((t) => t.pantalla_slug === p.slug)
+                .map((t) => (
+                  <div
+                    key={t.codigo}
+                    style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, fontSize: 12, color: "#475569", marginTop: 4 }}
+                    data-test="tele-vinculada"
+                  >
+                    <span>
+                      Tele <strong>{t.codigo}</strong> · vista {haceCuanto(t.visto_el, ahora)}
+                    </span>
+                    <select
+                      style={{ ...input, width: "auto", padding: "2px 6px", fontSize: 12 }}
+                      value=""
+                      onChange={(e) => e.target.value && mover(t, e.target.value)}
+                      title="Pasar esta tele a otro televisor"
+                    >
+                      <option value="">Mover a…</option>
+                      {activas
+                        .filter((x) => x.slug !== p.slug)
+                        .map((x) => (
+                          <option key={x.slug} value={x.slug}>
+                            {x.nombre}
+                          </option>
+                        ))}
+                    </select>
+                    <button type="button" onClick={() => desvincular(t)} style={botonChico}>
+                      Desvincular
+                    </button>
+                  </div>
+                ))}
             </div>
 
             <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              {p.activa && (
+                <button
+                  type="button"
+                  onClick={() => identificar(p)}
+                  style={iconoBoton}
+                  title="Identificar: la tele muestra su nombre en grande 30 segundos"
+                  data-test={`identificar-${p.slug}`}
+                >
+                  <Eye size={15} />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => copiar(p.slug)}
@@ -472,6 +724,36 @@ const botonSecundario: CSSProperties = {
   background: "#fff",
   color: NAVY,
   border: "1px solid #CBD5E1",
+};
+
+const cajaVincular: CSSProperties = {
+  border: "1px solid #FDE68A",
+  background: "#FFFBEB",
+  borderRadius: 10,
+  padding: 12,
+  marginBottom: 16,
+};
+
+const chipTele: CSSProperties = {
+  display: "grid",
+  gap: 2,
+  justifyItems: "start",
+  padding: "6px 10px",
+  border: "1px solid #CBD5E1",
+  borderRadius: 8,
+  background: "#fff",
+  color: NAVY,
+  cursor: "pointer",
+};
+
+const botonChico: CSSProperties = {
+  border: "1px solid #CBD5E1",
+  borderRadius: 6,
+  background: "#fff",
+  color: "#B42318",
+  fontSize: 12,
+  padding: "2px 8px",
+  cursor: "pointer",
 };
 
 const iconoBoton: CSSProperties = {

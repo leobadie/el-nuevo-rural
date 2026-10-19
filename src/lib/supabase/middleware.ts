@@ -15,8 +15,11 @@ const PUBLIC_PATHS = ["/login"];
  *
  * `/cartel-sw.js` es el service worker que guarda las ofertas en el televisor
  * para que arranque sin internet. Lo pide el TV sin sesión.
+ *
+ * `/tv` es la dirección común que se tipea en todas las teles para vincularlas
+ * a su pantalla (SPEC-cartel-vincular.md).
  */
-const PUBLIC_EXACT_PATHS = ["/cartel", "/cartel-sw.js"];
+const PUBLIC_EXACT_PATHS = ["/cartel", "/cartel-sw.js", "/tv"];
 
 /**
  * La pantalla de un televisor concreto: /cartel/tv/carniceria-1

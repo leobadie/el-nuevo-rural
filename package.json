@@ -43,7 +43,10 @@
     "verificar:descuento": "node verificacion/descuento.mjs",
     "verificar:base-descuento": "node verificacion/base-descuento.mts",
     "verificar:precios-calculos": "node verificacion/precios-calculos.mts",
-    "verificar:precios": "node verificacion/precios.mjs"
+    "verificar:precios": "node verificacion/precios.mjs",
+    "verificar:cartel-vincular-calculos": "node verificacion/cartel-vincular-calculos.mts",
+    "verificar:cartel-vincular": "node verificacion/cartel-vincular.mjs",
+    "verificar:cartel-nueva-placa": "node verificacion/cartel-nueva-placa.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",

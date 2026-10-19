@@ -131,6 +131,18 @@ export function crearBaseFalsa(tablas: Record<string, Fila[]>): SupabaseClient {
   const fotos = new Map<string, string>();
   const cliente = {
     from: (tabla: string) => new Consulta(tablas, tabla),
+    // Las dos funciones de la base que usa el admin para vincular teles (migración 031).
+    async rpc(nombre: string, args: Record<string, string>): Promise<Resultado> {
+      await new Promise((r) => setTimeout(r, 40));
+      if (nombre === "cartel_identificar") return { data: null, error: null };
+      if (nombre === "cartel_vincular") {
+        const tele = (tablas.cartel_dispositivos ?? []).find((t) => t.codigo === args.p_codigo && !t.pantalla_slug);
+        if (!tele) return { data: null, error: { message: `No hay ningún televisor esperando con el código ${args.p_codigo}.` } };
+        Object.assign(tele, { pantalla_slug: args.p_slug, vinculado_el: new Date().toISOString() });
+        return { data: null, error: null };
+      }
+      return { data: null, error: { message: `La base de prueba no tiene la función ${nombre}.` } };
+    },
     storage: {
       from: () => ({
         async upload(nombre: string, archivo: Blob) {

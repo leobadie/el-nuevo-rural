@@ -313,6 +313,94 @@ try {
     await admin.from("cartel_pantallas").delete().eq("slug", g);
   }
 
+  console.log("\n=== Vincular teles por código (031, SPEC-cartel-vincular.md) ===");
+  const { error: sin031 } = await admin.from("cartel_dispositivos").select("codigo").limit(1);
+  if (sin031) {
+    ok(false, "Existe cartel_dispositivos: falta aplicar supabase/031_cartel_dispositivos.sql", sin031.message);
+  } else {
+    const { randomUUID } = require("node:crypto") as typeof import("node:crypto");
+    const v = `${SLUG_PRUEBA}-vinc`;
+    const vOff = `${SLUG_PRUEBA}-vinc-off`;
+    const clave = randomUUID();
+    const otra = randomUUID();
+    const hola = (c: string | null) =>
+      anon.rpc("cartel_tv_hola", { p_clave: c, p_navegador: `${MARCA} Web0S`, p_ancho: 1920, p_alto: 1080 });
+    const estado = (slug: string, c: string | null) => anon.rpc("cartel_tv_estado", { p_slug: slug, p_clave: c });
+
+    try {
+      const { error: ePant } = await admin.from("cartel_pantallas").insert([
+        { slug: v, nombre: `${MARCA} vincular`, activa: true },
+        { slug: vOff, nombre: `${MARCA} vincular apagada`, activa: false },
+      ]);
+      ok(!ePant, "se pudieron crear las pantallas de prueba", ePant?.message);
+
+      const { data: h1, error: eH1 } = await hola(clave);
+      ok(!eH1 && /^[01234578]{4}$/.test(h1?.codigo) && h1?.pantalla === null, "Una tele nueva (sin sesión) recibe un código de 4 cifras sin 6 ni 9", eH1?.message ?? JSON.stringify(h1));
+      const { data: h2 } = await hola(clave);
+      ok(h2?.codigo === h1?.codigo, "Si vuelve a preguntar, el código es el mismo", JSON.stringify(h2));
+      const { count } = await admin.from("cartel_dispositivos").select("clave", { count: "exact", head: true }).eq("clave", clave);
+      ok(count === 1, "…y sigue habiendo una sola fila", `${count} fila(s)`);
+      const { data: h3 } = await hola(otra);
+      ok(!!h3?.codigo && h3.codigo !== h1?.codigo, "Otra tele recibe otro código", JSON.stringify(h3));
+      const { error: eSinClave } = await hola(null);
+      ok(!!eSinClave, "Sin clave no hay código", eSinClave?.message ?? "¡LO DIO!");
+
+      const { data: leeAnon } = await anon.from("cartel_dispositivos").select("*");
+      ok((leeAnon ?? []).length === 0, "Sin sesión no se leen las teles (ni las claves de las otras)", `${leeAnon?.length ?? 0} fila(s)`);
+      const { error: eInsAnon } = await anon.from("cartel_dispositivos").insert({ clave: randomUUID(), codigo: "1234" });
+      ok(!!eInsAnon, "…ni se crean directo en la tabla", eInsAnon?.message ?? "¡ENTRÓ!");
+      const { data: updAnon } = await anon.from("cartel_dispositivos").update({ pantalla_slug: v }).eq("codigo", h1.codigo).select();
+      ok((updAnon?.length ?? 0) === 0, "…ni una tele se vincula sola editando la tabla", `${updAnon?.length ?? 0} fila(s)`);
+      const { error: eVincAnon } = await anon.rpc("cartel_vincular", { p_codigo: h1.codigo, p_slug: v });
+      ok(!!eVincAnon, "…ni con la función de vincular", eVincAnon?.message ?? "¡LA VINCULÓ!");
+      const { error: eIdAnon } = await anon.rpc("cartel_identificar", { p_slug: v });
+      ok(!!eIdAnon, "Sin sesión no se puede llamar a Identificar (migración 032)", eIdAnon?.message ?? "¡ENTRÓ!");
+      const { data: sinIdentificar } = await admin.from("cartel_pantallas").select("identificar_hasta").eq("slug", v).single();
+      ok(sinIdentificar?.identificar_hasta === null, "…y la pantalla no quedó marcada para identificar", JSON.stringify(sinIdentificar));
+
+      const { data: e0 } = await estado(v, clave);
+      ok(e0?.conocida === true && e0?.pantalla === null && e0?.identificar_seg === 0, "La tele sin vincular se reconoce, sin pantalla", JSON.stringify(e0));
+
+      const { error: eVinc } = await admin.rpc("cartel_vincular", { p_codigo: h1.codigo, p_slug: v });
+      ok(!eVinc, "Se vincula con el código", eVinc?.message);
+      const { error: eOtraVez } = await admin.rpc("cartel_vincular", { p_codigo: h1.codigo, p_slug: v });
+      ok(!!eOtraVez, "Un código ya vinculado no se vuelve a usar", eOtraVez?.message ?? "¡LO ACEPTÓ!");
+      const { error: eNoExiste } = await admin.rpc("cartel_vincular", { p_codigo: "0000", p_slug: v });
+      ok(!!eNoExiste && /0000/.test(eNoExiste.message), "Un código que no existe da error claro", eNoExiste?.message ?? "¡LO ACEPTÓ!");
+      const { error: eApagada } = await admin.rpc("cartel_vincular", { p_codigo: h3.codigo, p_slug: vOff });
+      ok(!!eApagada, "No se vincula a una pantalla apagada", eApagada?.message ?? "¡LO ACEPTÓ!");
+
+      const { data: h4 } = await hola(clave);
+      ok(h4?.pantalla === v, "Al preguntar de nuevo, la tele se entera de su pantalla", JSON.stringify(h4));
+      const { data: e1 } = await estado(v, clave);
+      ok(e1?.conocida === true && e1?.pantalla === v && e1?.identificar_seg > 20 && e1?.identificar_seg <= 30, "Vincular la identifica sola (nombre en grande ~30 s)", JSON.stringify(e1));
+      const { data: e2 } = await estado(v, null);
+      ok(e2?.identificar_seg > 0 && !("conocida" in (e2 ?? {})), "Una tele cargada a mano (sin clave) también ve el Identificar, y nada más", JSON.stringify(e2));
+
+      await admin.from("cartel_dispositivos").update({ pantalla_slug: vOff }).eq("clave", clave);
+      const { data: h5 } = await hola(clave);
+      ok(h5?.pantalla === null, "Vinculada a una pantalla apagada cuenta como sin vincular", JSON.stringify(h5));
+
+      await admin.from("cartel_dispositivos").update({ pantalla_slug: v }).eq("clave", clave);
+      await admin.from("cartel_pantallas").delete().eq("slug", v);
+      const { data: trasBorrar } = await admin.from("cartel_dispositivos").select("pantalla_slug").eq("clave", clave).single();
+      ok(trasBorrar?.pantalla_slug === null, "Borrar la pantalla deja la tele esperando código (no la borra)", JSON.stringify(trasBorrar));
+
+      await admin.from("cartel_dispositivos").delete().eq("clave", clave);
+      const { data: e3 } = await estado(vOff, clave);
+      ok(e3?.conocida === false, "Desvinculada (fila borrada): la tele se entera", JSON.stringify(e3));
+
+      for (const malo of ["6666", "9123", "123", "12345", "abcd"]) {
+        const { error } = await admin.from("cartel_dispositivos").insert({ clave: randomUUID(), codigo: malo });
+        ok(!!error, `Rechaza el código "${malo}"`, error?.message ?? "¡LO ACEPTÓ!");
+      }
+    } finally {
+      await admin.from("cartel_dispositivos").delete().in("clave", [clave, otra]);
+      await admin.from("cartel_dispositivos").delete().like("navegador", `${MARCA}%`);
+      await admin.from("cartel_pantallas").delete().in("slug", [v, vOff]);
+    }
+  }
+
   console.log("\n=== Ofertas y flyer en un solo módulo (023, SPEC-ofertas.md) ===");
   const { error: sin023 } = await admin.from("flyer_config").select("id").limit(1);
   if (sin023) {

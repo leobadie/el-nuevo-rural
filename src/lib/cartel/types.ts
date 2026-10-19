@@ -97,3 +97,18 @@ export type Latido = {
   ancho: number | null;
   alto: number | null;
 };
+
+/**
+ * Una tele que entró por /tv (migración 031, SPEC-cartel-vincular.md). La clave
+ * no se lee nunca desde el admin: con el código alcanza para reconocerla.
+ */
+export type Dispositivo = {
+  codigo: string;
+  /** null = esperando que la vinculen. */
+  pantalla_slug: string | null;
+  visto_el: string;
+  vinculado_el: string | null;
+  navegador: string | null;
+  ancho: number | null;
+  alto: number | null;
+};

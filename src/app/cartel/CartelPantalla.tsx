@@ -15,7 +15,9 @@ import {
   rotacionDe,
 } from "@/lib/cartel/placas";
 
+import { MIRAR_VINCULO_MS, claveDeLaTele, decidirVinculo, guardarPantalla } from "@/lib/cartel/tele";
 import type { Rotacion } from "@/lib/cartel/placas";
+import type { EstadoTele } from "@/lib/cartel/tele";
 import type { Asignacion, Pantalla, Placa } from "@/lib/cartel/types";
 
 /** Azul de fondo cuando el color fuerte lo lleva la franja de sección. */
@@ -302,6 +304,9 @@ export default function CartelPantalla({
       const destino = sw.controller;
       if (!destino) return;
       const urls = [window.location.href, ...performance.getEntriesByType("resource").map((e) => e.name)];
+      // Una tele vinculada por código arranca por /tv: esa página también tiene
+      // que estar guardada, y en su primera carga todavía no había guardado.
+      if (claveDeLaTele()) urls.push(`${window.location.origin}/tv`);
       destino.postMessage({ tipo: "precargar", urls });
     };
 
@@ -361,6 +366,50 @@ export default function CartelPantalla({
     const id = setInterval(latir, LATIDO_MS);
     return () => clearInterval(id);
   }, [slugPantalla, modoCaptura, version]);
+
+  // ---- Vínculo e "Identificar" ------------------------------------------
+  // Cada 15 s la tele pregunta si desde el admin la movieron de pantalla, la
+  // desvincularon o pidieron que muestre su nombre (SPEC-cartel-vincular.md).
+  // Sin internet o sin la migración 031 la consulta falla y no pasa nada.
+  const [identificarHasta, setIdentificarHasta] = useState(0);
+  useEffect(() => {
+    if (!slugPantalla || modoCaptura) return;
+    const clave = claveDeLaTele();
+
+    const mirar = () => {
+      createClient()
+        .rpc("cartel_tv_estado", { p_slug: slugPantalla, p_clave: clave })
+        .then(({ data, error }) => {
+          if (error || !data) return;
+          const estado = data as EstadoTele;
+          const decision = decidirVinculo(slugPantalla, clave != null, estado);
+          if (decision.tipo === "ir") {
+            guardarPantalla(decision.slug);
+            window.location.replace(`/cartel/tv/${decision.slug}`);
+            return;
+          }
+          if (decision.tipo === "desvinculada") {
+            guardarPantalla(null);
+            window.location.replace("/tv");
+            return;
+          }
+          if (clave) guardarPantalla(slugPantalla);
+          // Con el reloj de la tele solo se mide cuánto falta, no la hora.
+          if (estado.identificar_seg > 0) setIdentificarHasta(Date.now() + estado.identificar_seg * 1000);
+        });
+    };
+
+    mirar();
+    const id = setInterval(mirar, MIRAR_VINCULO_MS);
+    return () => clearInterval(id);
+  }, [slugPantalla, modoCaptura]);
+
+  const identificando = identificarHasta > 0;
+  useEffect(() => {
+    if (!identificarHasta) return;
+    const id = setTimeout(() => setIdentificarHasta(0), Math.max(identificarHasta - Date.now(), 0));
+    return () => clearTimeout(id);
+  }, [identificarHasta]);
 
   if (!placa) return null;
 
@@ -466,6 +515,16 @@ export default function CartelPantalla({
             ))}
           </div>
         </footer>
+        )}
+
+        {identificando && pantallaViva && (
+          <div className="cartel-identificar" data-test="identificar">
+            <span className="cartel-identificar-dato">Este televisor es</span>
+            <span className="cartel-identificar-nombre">{pantallaViva.nombre}</span>
+            <span className="cartel-identificar-dato">
+              {pantallaViva.seccion ? `Muestra ${pantallaViva.seccion}` : "Muestra todas las secciones"}
+            </span>
+          </div>
         )}
       </div>
 

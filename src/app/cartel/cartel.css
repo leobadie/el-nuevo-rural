@@ -903,3 +903,90 @@
 .cartel-previa-horizontal .vd-seccion {
   display: none;
 }
+
+/* ---------- Vincular la tele (/tv, SPEC-cartel-vincular.md) ----------
+   En vmin para que se lea igual en una tele acostada que en una parada (que el
+   navegador igual dibuja acostada). */
+
+.tv-vincular {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3vmin;
+  padding: 4vmin;
+  background: #12203c;
+  color: #fff;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  text-align: center;
+  cursor: none;
+}
+
+.tv-vincular-logo {
+  width: 14vmin;
+  height: 14vmin;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.tv-vincular-titulo {
+  margin: 0;
+  font-size: 5vmin;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.tv-vincular-codigo {
+  margin: 0;
+  font-size: 30vmin;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  color: #ffd166;
+}
+
+.tv-vincular-pasos {
+  margin: 0;
+  font-size: 4vmin;
+  line-height: 1.35;
+}
+
+.tv-vincular-pie {
+  margin: 0;
+  font-size: 2.6vmin;
+  opacity: 0.6;
+}
+
+/* Cartel de "Identificar": el nombre de la pantalla encima de todo, 30 s.
+   Va dentro del marco, así gira junto con la placa en las teles paradas. */
+.cartel-identificar {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 30);
+  background: rgba(10, 18, 36, 0.92);
+  border: calc(var(--u) * 24) solid #ffd166;
+  box-sizing: border-box;
+  text-align: center;
+  padding: calc(var(--u) * 60);
+}
+
+.cartel-identificar-nombre {
+  font-size: calc(var(--u) * 150);
+  font-weight: 900;
+  line-height: 1.05;
+  text-transform: uppercase;
+  color: #ffd166;
+}
+
+.cartel-identificar-dato {
+  font-size: calc(var(--u) * 48);
+  opacity: 0.8;
+}

@@ -17,7 +17,9 @@
  *   - Todo lo demás (el latido, cualquier escritura) pasa directo.
  *
  * Vive en la raíz y no en /cartel/tv/ porque esa ruta solo admite slugs; se
- * registra con scope /cartel/tv/ para que no toque el resto del sistema.
+ * registra con scope /cartel/tv/ para que no toque el resto del sistema, y una
+ * segunda vez con scope /tv: la dirección común para vincular las teles
+ * (SPEC-cartel-vincular.md), que también tiene que abrir sin internet.
  */
 
 const VERSION = "v1";
@@ -90,6 +92,7 @@ function clasificar(req) {
   const propio = url.origin === self.location.origin;
 
   if (propio && /^\/cartel\/tv\/[a-z0-9-]+\/?$/.test(url.pathname)) return "pagina";
+  if (propio && /^\/tv\/?$/.test(url.pathname)) return "pagina";
   if (propio && (url.pathname.startsWith("/_next/static/") || url.pathname === "/logo.jpg" || url.pathname === "/cartel/despierto.webm")) {
     return "archivo";
   }

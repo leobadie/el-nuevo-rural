@@ -59,6 +59,12 @@ export default function PreviewOfertasCliente({ vista }: { vista: VistaOfertas }
         cartel_pantallas: PANTALLAS.map((p) => ({ ...p })),
         cartel_placa_pantalla: [],
         flyer_config: [],
+        // Dos teles esperando código y una ya vinculada a Carnicería 1.
+        cartel_dispositivos: [
+          { codigo: "4821", pantalla_slug: null, visto_el: haceMinutos(0.1), vinculado_el: null, navegador: null, ancho: 1920, alto: 1080 },
+          { codigo: "3075", pantalla_slug: null, visto_el: haceMinutos(3), vinculado_el: null, navegador: null, ancho: 1920, alto: 1080 },
+          { codigo: "1258", pantalla_slug: "carniceria-1", visto_el: haceMinutos(0.3), vinculado_el: haceMinutos(60), navegador: null, ancho: 1920, alto: 1080 },
+        ],
         // Los tres estados del televisor: uno recién visto, uno caído hace una
         // hora y "acceso" sin latido, que sale como "nunca se conectó".
         cartel_latidos: [
