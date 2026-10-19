@@ -8,6 +8,7 @@ import {
   MAX_BYTES_VIDEO,
   TOTAL_SUGERIDO_SEG,
   acotarTramo,
+  avisoResolucion,
   detectarCodec,
   duplicarClip,
   duracionClips,
@@ -93,7 +94,7 @@ export default function VideoEditor({
       });
       // Se agrega al final: unir clips es subir uno detrás del otro.
       actualizar((cs) => [...cs, nuevo]);
-      setAviso(veredicto.aviso);
+      setAviso([avisoResolucion(meta.ancho, meta.alto), veredicto.aviso].filter(Boolean).join(" ") || null);
     } catch (e) {
       onError(`No se pudo subir el video: ${(e as Error).message}`);
     } finally {

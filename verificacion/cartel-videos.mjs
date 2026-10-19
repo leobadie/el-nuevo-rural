@@ -134,6 +134,8 @@ try {
     await a.waitForSelector('[data-test="recortador-video"]', { timeout: 20_000 });
     const durTexto = await a.textContent('[data-test="duracion-recorte"]');
     ok(/6,1 s/.test(durTexto ?? ""), `${nombre}: el H.264 se sube y se lee su duración`, durTexto?.trim());
+    const avisoRes = await a.textContent('[data-test="aviso-video"]').catch(() => null);
+    ok(/poca resolución \(360×640\)/.test(avisoRes ?? ""), `${nombre}: un video chico (360x640) avisa que se va a ver pixelado`, avisoRes ?? "sin aviso");
 
     // Recorte del segundo 1 al 4.
     await moverDeslizador(a, "recorte-desde", 1);

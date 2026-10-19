@@ -30,6 +30,7 @@ const v = cargar("src/lib/cartel/video.ts", { "./types": {} }) as {
   acotarTramo: (c: Clip) => Clip;
   detectarCodec: (b: Uint8Array) => string;
   veredictoVideo: (codec: string, bytes: number) => { puede: boolean; aviso: string | null };
+  avisoResolucion: (ancho: number | null, alto: number | null) => string | null;
 };
 const p = cargar("src/lib/cartel/placas.ts", { "./types": {} }) as {
   duracionMs: (placa: Record<string, unknown>) => number;
@@ -65,6 +66,16 @@ igual(ok("av1"), false, "AV1 no se sube");
 igual(ok("desconocido"), true, "formato desconocido se sube con aviso");
 igual(v.veredictoVideo("desconocido", 1).aviso !== null, true, "…y el aviso existe");
 igual(v.veredictoVideo("h264", 1_000_000).aviso, null, "un H.264 liviano no tiene aviso");
+igual(/WhatsApp/.test(v.veredictoVideo("hevc", 1).aviso ?? ""), false, "el aviso de HEVC no manda a WhatsApp (achica el video)");
+
+// ---- Resolución (reportado el 19/10/2026: un video de 392x848 se veía pixelado) ----
+igual(/392×848/.test(v.avisoResolucion(392, 848) ?? ""), true, "392x848 (pasado por WhatsApp) avisa que se va a ver pixelado");
+igual(v.avisoResolucion(848, 392) !== null, true, "…también acostado");
+igual(v.avisoResolucion(360, 640) !== null, true, "360x640 avisa");
+igual(v.avisoResolucion(720, 1280), null, "720x1280 no avisa");
+igual(v.avisoResolucion(1080, 1920), null, "1080x1920 (celular) no avisa");
+igual(v.avisoResolucion(3840, 2160), null, "4K no avisa");
+igual(v.avisoResolucion(null, null), null, "sin tamaño conocido no avisa");
 
 // ---- Peso (punto 3) ------------------------------------------------------
 igual(ok("h264", v.MAX_BYTES_VIDEO), true, "justo 50 MB se sube");

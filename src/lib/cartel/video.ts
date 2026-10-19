@@ -72,6 +72,25 @@ function buscar(bytes: Uint8Array, texto: string): boolean {
   return false;
 }
 
+/**
+ * Lado corto mínimo para que no se vea pixelado. La tele muestra 1080 de ancho
+ * (parada) o de alto (acostada): por debajo de 720 el video se agranda más de
+ * una vez y media y se nota. Un celular graba como mínimo 1080; menos que esto
+ * casi siempre es un video que pasó por WhatsApp o se bajó de una red.
+ */
+export const LADO_MINIMO_VIDEO = 720;
+
+/** Aviso si el video tiene poca resolución; null si está bien. No frena la subida. */
+export function avisoResolucion(ancho: number | null | undefined, alto: number | null | undefined): string | null {
+  if (!ancho || !alto) return null;
+  if (Math.min(ancho, alto) >= LADO_MINIMO_VIDEO) return null;
+  return (
+    `Este video tiene poca resolución (${ancho}×${alto}) y se va a ver pixelado en la tele. ` +
+    "Subí el original del celular, no el que pasó por WhatsApp o se bajó de una red " +
+    "(si lo mandás por WhatsApp, enviálo como documento)."
+  );
+}
+
 export type Veredicto = { puede: boolean; aviso: string | null };
 
 /** Si el video se va a poder ver en los televisores, y qué decirle al usuario si no. */
@@ -88,7 +107,8 @@ export function veredictoVideo(codec: Codec, bytes: number): Veredicto {
       aviso:
         "Este video está en HEVC (el formato de los iPhone) y los televisores no lo pueden reproducir. " +
         "Para los próximos: en el iPhone, Ajustes → Cámara → Formatos → «Más compatible». " +
-        "Para este: pasalo por CapCut y exportalo, o mandátelo por WhatsApp y bajalo de ahí.",
+        // No sugerir WhatsApp: lo convierte, pero lo achica y queda pixelado.
+        "Para este: pasalo por CapCut y exportalo en 1080p.",
     };
   }
   if (codec === "av1") {
