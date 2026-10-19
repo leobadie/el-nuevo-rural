@@ -69,6 +69,23 @@ try {
     const tituloEd = await page.$eval('[data-test="formulario-placa"] h2', (h) => h.textContent);
     ok(tituloEd === "Editar placa" && trasEditar >= 0 && trasEditar < viewport.height * 0.3, `${nombre}: "Editar" también lleva al formulario`, `${tituloEd} · ${trasEditar}px`);
 
+    // Elegir televisores: la lista tiene que nombrarlos, no decir "todas las pantallas".
+    if (nombre === "movil") {
+      const form = page.locator('[data-test="formulario-placa"]');
+      await page.click('[data-test="nueva-placa"]');
+      await page.waitForTimeout(800);
+      await form.locator('input[placeholder*="vacío = se ve en todas"]').fill("");
+      await form.locator('input[placeholder="Asado de tira"]').fill("ZZ prueba teles");
+      await form.locator("button", { hasText: /^Carnicería 2$/ }).click();
+      await form.locator("button", { hasText: /^Acceso$/ }).click();
+      await form.locator("button", { hasText: /^Crear placa$/ }).click();
+      const linea = await page
+        .waitForSelector('[data-test="teles-de-placa"]', { timeout: 8_000 })
+        .then((el) => el.textContent())
+        .catch(() => null);
+      ok(/solo en Carnicería 2, Acceso/.test(linea ?? ""), "movil: una placa con televisores elegidos dice a cuáles va", linea ?? "no apareció");
+    }
+
     // En la compu el formulario está al lado: "Nueva" no tiene que mover la página.
     if (nombre === "desktop") {
       await page.evaluate(() => window.scrollTo(0, 0));

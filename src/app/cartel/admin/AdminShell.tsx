@@ -618,7 +618,16 @@ export default function AdminShell({
                         {p.titulo}
                       </div>
                       <div style={{ fontSize: 11, color: "#777", marginTop: 2 }}>
-                        {p.seccion ? `${p.seccion} · ${p.tipo}` : `${p.tipo} · todas las pantallas`}
+                        {/* Elegir televisores manda sobre la sección (placasDePantalla):
+                            si los tiene, se nombran; decir "todas" sería mentir. */}
+                        {(() => {
+                          const teles = pantallasIniciales
+                            .filter((t) => asignaciones.some((a) => a.placa_id === p.id && a.pantalla_slug === t.slug))
+                            .sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, "es"))
+                            .map((t) => t.nombre);
+                          if (teles.length > 0) return <span data-test="teles-de-placa">{`${p.tipo} · solo en ${teles.join(", ")}`}</span>;
+                          return p.seccion ? `${p.seccion} · ${p.tipo}` : `${p.tipo} · todas las pantallas`;
+                        })()}
                         {p.precio != null && ` · ${fmtPrecio(p.precio)}`}
                         {/* Un video dura su recorte, no los segundos fijos. */}
                         {p.tipo === "video"
