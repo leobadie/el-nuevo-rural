@@ -1,0 +1,41 @@
+feature,area,priority,original,clone,notes
+Inicio con ofertas y destacados en carruseles,inicio,must,yes,no,S01
+Banner principal rotativo,inicio,should,yes,no,S01; puede tomar las placas del cartel
+Buscador con resultados en grilla,busqueda,must,yes,no,S03
+Búsqueda tolerante a acentos y errores de tipeo,busqueda,must,yes,no,"lehe -> leche, azucar -> azúcar"
+Autocompletado y términos más buscados,busqueda,should,yes,no,S01 S03
+Navegar por categorías,catalogo,must,yes,no,S02; 1 o 2 niveles alcanzan
+Ordenar por precio y nombre,catalogo,should,yes,no,S03
+Filtros por categoría y marca,catalogo,could,yes,no,S04
+Filtro sin TACC,catalogo,could,yes,no,S04
+Tarjeta con foto nombre y precio,catalogo,must,yes,no,S03
+Precio anterior tachado y porcentaje de descuento,precios,must,yes,no,S03 S05
+Precio por kilo o litro,precios,should,yes,no,S05; obligatorio por ley de góndolas en Argentina
+Precio sin impuestos nacionales,precios,should,yes,no,"S05; Ley 27.743 de transparencia fiscal, a confirmar si aplica a la web"
+Promos por cantidad (3x2 / llevando 2),precios,could,yes,no,S03
+Ficha de producto con descripción,catalogo,should,yes,no,S05
+Agregar al carrito desde la tarjeta sin entrar a la ficha,carrito,must,yes,no,S03
+Cambiar cantidad desde la tarjeta (- cant +),carrito,must,yes,no,
+Carrito que se mantiene al recargar,carrito,must,yes,no,guardado en el navegador
+Carrito con subtotal y quitar productos,carrito,must,yes,no,S07
+Elegir retiro en el local o envío,entrega,must,yes,no,S06; decisión del usuario
+Zonas de envío con costo y mínimo,entrega,should,yes,no,
+Enviar pedido por WhatsApp con mensaje armado,pedido,must,no,no,propio del clon; reemplaza el checkout
+Comprar sin crear cuenta,pedido,must,no,no,"Día pide cuenta; el clon no"
+Pantalla de pedido enviado,pedido,must,no,no,S10
+Guardar los pedidos en la base,pedido,should,no,no,historial y estadística
+Aviso de fuera de horario,pedido,should,no,no,
+Admin de productos (alta precio foto pausar),admin,must,no,no,S11
+Importar productos desde Excel o CSV de la caja,admin,should,no,no,depende del sistema de caja
+Ofertas del cartel en la web,admin,should,no,no,reutiliza cartel_placas
+Admin de WhatsApp horarios y zonas,admin,must,no,no,S12
+Favoritos,cuenta,could,yes,no,
+Asistente de ayuda flotante,soporte,could,yes,no,un botón de WhatsApp alcanza
+Funciona bien en celular,general,must,yes,no,
+Productos patrocinados,catalogo,could,yes,skip,acuerdos comerciales con marcas
+Promociones bancarias,precios,could,yes,skip,convenios con bancos
+Club Día y precios para socios,cuenta,could,yes,skip,programa de fidelidad propio de Día
+Buscar tienda más cercana,entrega,could,yes,skip,hay un solo local
+Cuenta de cliente con login,cuenta,could,yes,skip,"no hace falta para WhatsApp; más adelante"
+Pago online,pedido,could,yes,skip,segunda etapa por decisión del usuario
+Catálogo y fotos de Día,catalogo,must,yes,skip,son de Día; el catálogo es propio

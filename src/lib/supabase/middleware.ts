@@ -33,7 +33,20 @@ const PUBLIC_EXACT_PATHS = ["/cartel", "/cartel-sw.js", "/tv"];
  */
 const PUBLIC_PATTERNS = [/^\/cartel\/tv\/[a-z0-9]+(-[a-z0-9]+)*\/?$/];
 
+/**
+ * La tienda online (/tienda y todo lo que cuelga) es pública y no usa sesión: sale
+ * antes de consultar a Supabase Auth, así un cliente no espera una validación que no
+ * necesita ni se queda afuera si Auth tarda. El admin del catálogo vive en /catalogo,
+ * fuera de este prefijo, a propósito. El patrón exige "/" o fin después de "tienda",
+ * para que "/tiendaX" no quede abierto por accidente.
+ */
+const TIENDA_PUBLICA = /^\/tienda(\/|$)/;
+
 export async function updateSession(request: NextRequest) {
+  if (TIENDA_PUBLICA.test(request.nextUrl.pathname)) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(

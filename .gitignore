@@ -53,3 +53,6 @@ LOGO RURAL(2).jpg
 
 # videos e imágenes generados del cartel (se regeneran con npm run cartel:video)
 /cartel-salida/
+
+# Capturas de referencia de otras webs (no se publican)
+replica/screens/

@@ -41,3 +41,82 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/*
+ * Tokens de la tienda online (/tienda). Fuente: replica/design/tokens.json.
+ * Van bajo .tienda para no cambiar nada del sistema interno. Contraste AA
+ * chequeado con `npm run verificar:tienda-contraste`; si cambia un color acá,
+ * cambiarlo también en tokens.json y volver a correrlo.
+ */
+.tienda {
+  --t-bg: #fdf8ee;
+  --t-surface: #ffffff;
+  --t-surface-alt: #fff1d1;
+  --t-border: #eadfcc;
+  --t-border-input: #8c7b6b;
+  --t-text: #2a1a12;
+  --t-text-muted: #6b5a4e;
+  --t-accent: #b80f0a;
+  --t-accent-hover: #930c08;
+  --t-on-accent: #ffffff;
+  --t-highlight: #ffc20e;
+  --t-on-highlight: #3a1a00;
+  --t-price: #2a1a12;
+  --t-price-sale: #b80f0a;
+  --t-whatsapp: #157a43;
+  --t-on-whatsapp: #ffffff;
+  --t-danger: #a3261c;
+  --t-danger-bg: #fdecea;
+  --t-success: #1e6b45;
+  --t-success-bg: #e7f4ec;
+  --t-warning-bg: #fff1d1;
+  --t-on-warning: #6a3d00;
+  --t-focus: #1d4ed8;
+  --t-shadow-card: 0 1px 2px rgba(42, 26, 18, 0.06), 0 1px 3px rgba(42, 26, 18, 0.08);
+  --t-shadow-pop: 0 12px 32px rgba(42, 26, 18, 0.18);
+  --t-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* La tienda es siempre clara: fondo explícito aunque el sistema esté en modo oscuro. */
+  background: var(--t-bg);
+  color: var(--t-text);
+  color-scheme: light;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100%;
+  width: 100%;
+  min-width: 0;
+}
+
+.tienda :focus-visible {
+  outline: 2px solid var(--t-focus);
+  outline-offset: 2px;
+}
+
+@theme inline {
+  --color-t-bg: var(--t-bg);
+  --color-t-surface: var(--t-surface);
+  --color-t-surface-alt: var(--t-surface-alt);
+  --color-t-border: var(--t-border);
+  --color-t-border-input: var(--t-border-input);
+  --color-t-text: var(--t-text);
+  --color-t-muted: var(--t-text-muted);
+  --color-t-accent: var(--t-accent);
+  --color-t-accent-hover: var(--t-accent-hover);
+  --color-t-on-accent: var(--t-on-accent);
+  --color-t-highlight: var(--t-highlight);
+  --color-t-on-highlight: var(--t-on-highlight);
+  --color-t-price: var(--t-price);
+  --color-t-price-sale: var(--t-price-sale);
+  --color-t-whatsapp: var(--t-whatsapp);
+  --color-t-on-whatsapp: var(--t-on-whatsapp);
+  --color-t-danger: var(--t-danger);
+  --color-t-danger-bg: var(--t-danger-bg);
+  --color-t-success: var(--t-success);
+  --color-t-success-bg: var(--t-success-bg);
+  --color-t-warning-bg: var(--t-warning-bg);
+  --color-t-on-warning: var(--t-on-warning);
+  --shadow-t-card: var(--t-shadow-card);
+  --shadow-t-pop: var(--t-shadow-pop);
+  --radius-t-sm: 8px;
+  --radius-t-md: 12px;
+  --radius-t-lg: 18px;
+}

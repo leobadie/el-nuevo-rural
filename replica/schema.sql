@@ -1,0 +1,3 @@
+-- Este borrador fue reemplazado por la migración real: supabase/033_tienda.sql
+-- (mismo diseño, más el token del pedido y las funciones tienda_importar,
+-- tienda_crear_pedido y tienda_ver_pedido). Ver SPEC-tienda.md.
