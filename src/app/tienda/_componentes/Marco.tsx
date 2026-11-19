@@ -52,6 +52,19 @@ export function Marco({ children }: { children: ReactNode }) {
         <p className="font-bold text-t-text">Supermercado El Nuevo Rural</p>
         {catalogo.config.direccion_retiro ? <p>{catalogo.config.direccion_retiro}</p> : null}
         <p className="mt-1">Precios con IVA incluido. Los productos que se pesan se cobran según la balanza.</p>
+        {catalogo.creditoOff ? (
+          <p className="mt-1" data-test="credito-fotos">
+            Algunas fotos de productos:{" "}
+            <a href="https://world.openfoodfacts.org" target="_blank" rel="noreferrer" className="underline">
+              Open Food Facts
+            </a>{" "}
+            (
+            <a href="https://creativecommons.org/licenses/by-sa/3.0/deed.es" target="_blank" rel="noreferrer" className="underline">
+              CC BY-SA
+            </a>
+            ).
+          </p>
+        ) : null}
       </footer>
     </>
   );

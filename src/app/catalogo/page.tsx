@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CatalogoAdmin, type ConfigAdmin, type UltimaImportacion } from "./CatalogoAdmin";
+import { FotosSugeridas } from "./FotosSugeridas";
 
 export const metadata = { title: "Tienda online · El Nuevo Rural" };
 
@@ -49,6 +50,7 @@ export default async function CatalogoPage() {
         ultima={(imp.data as UltimaImportacion | null) ?? null}
         productosPublicados={cuenta.count ?? 0}
       />
+      {faltaMigracion ? null : <FotosSugeridas />}
     </div>
   );
 }

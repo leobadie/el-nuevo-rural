@@ -31,6 +31,8 @@ export type Catalogo = {
   config: ConfigPublica;
   categorias: { slug: string; nombre: string }[];
   productos: ProductoPublico[];
+  /** Hay alguna foto publicada de Open Food Facts: el pie tiene que dar el crédito (CC BY-SA). */
+  creditoOff: boolean;
 };
 
 type FilaProducto = {
@@ -44,6 +46,7 @@ type FilaProducto = {
   se_vende_por: "unidad" | "kg";
   fraccionable: boolean;
   foto_url: string | null;
+  foto_credito: string | null;
   busqueda: string;
   categoria: { slug: string; nombre: string } | null;
 };
@@ -68,7 +71,7 @@ async function leerCatalogo(): Promise<Catalogo> {
       const { data, error } = await sb
         .from("tienda_productos")
         .select(
-          "codigo_xrp, nombre_xrp, nombre_web, marca, presentacion, precio_centavos, precio_anterior_centavos, se_vende_por, fraccionable, foto_url, busqueda, categoria:tienda_categorias(slug, nombre)",
+          "codigo_xrp, nombre_xrp, nombre_web, marca, presentacion, precio_centavos, precio_anterior_centavos, se_vende_por, fraccionable, foto_url, foto_credito, busqueda, categoria:tienda_categorias(slug, nombre)",
         )
         .order("nombre_xrp")
         .order("codigo_xrp")
@@ -107,11 +110,12 @@ async function leerCatalogo(): Promise<Catalogo> {
     config,
     categorias: (cats.data ?? []).filter((c) => conProductos.has(c.slug)).map(({ slug, nombre }) => ({ slug, nombre })),
     productos,
+    creditoOff: filas.some((f) => !!f.foto_url && (f.foto_credito ?? "").includes("Open Food Facts")),
   };
 }
 
 /** Catálogo cacheado; se invalida al importar o al cambiar la config (updateTag). */
-const catalogoCacheado = unstable_cache(leerCatalogo, ["tienda-catalogo-v1"], {
+const catalogoCacheado = unstable_cache(leerCatalogo, ["tienda-catalogo-v2"], {
   tags: [TAG_CATALOGO],
   revalidate: 600,
 });

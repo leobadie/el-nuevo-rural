@@ -54,7 +54,10 @@
     "verificar:tienda-importar": "node verificacion/tienda-importar.mts",
     "verificar:tienda-pedido": "node verificacion/tienda-pedido.mts",
     "verificar:base-tienda": "node verificacion/base-tienda.mts",
-    "verificar:tienda": "node verificacion/tienda.mjs"
+    "verificar:tienda": "node verificacion/tienda.mjs",
+    "verificar:tienda-fotos": "node verificacion/tienda-fotos.mts",
+    "verificar:base-tienda-fotos": "node verificacion/base-tienda-fotos.mts",
+    "tienda:fotos": "node scripts/buscar-fotos-off.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
