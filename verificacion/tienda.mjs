@@ -42,7 +42,10 @@ const env = leerEnv();
 const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
 const results = [];
-const check = (id, desc, ok, detail) => results.push({ id, desc, ok: !!ok, detail: detail === undefined ? "" : String(detail) });
+const check = (id, desc, ok, detail) => {
+  results.push({ id, desc, ok: !!ok, detail: detail === undefined ? "" : String(detail) });
+  if (process.env.PROGRESO) console.log(`… ${id} ${ok ? "ok" : "FALLA"}`); // ver en qué paso va
+};
 const plano = (s) => s.replace(/[\u00a0\u202f\s]+/g, " ").trim();
 
 async function main() {
@@ -187,6 +190,9 @@ async function main() {
     texto.includes(`(#${numero})`) && texto.includes("• 2 ×") && texto.includes("• 500 g") && texto.includes("*Total aproximado:")
       && texto.includes("Envío a domicilio: San Martín 450") && texto.includes("Pago: Transferencia") && texto.includes("Teléfono: 1100000009"),
     texto.replace(/\n/g, " / ").slice(0, 200));
+  // 035: la línea lleva la marca (el aceite del recorrido es Natura).
+  const lineaAceite = texto.split("\n").find((l) => l.includes("Aceite de girasol")) ?? "";
+  check("R19f", "Cada línea del mensaje lleva la marca", lineaAceite.includes("Natura"), lineaAceite);
 
   const enBase = (await admin.from("tienda_pedidos").select("total_centavos, total_aproximado, entrega").eq("numero", numero).single()).data;
   const totalMensaje = Number((texto.match(/Total aproximado: \$ ([\d.]+)/)?.[1] ?? "").replace(/\./g, "")) * 100;
@@ -232,7 +238,8 @@ async function main() {
 
   check("R22", "Sin errores de JavaScript en consola", errores.length === 0, errores.join(" | ").slice(0, 400));
 
-  await browser.close().catch(() => {});
+  // En Windows el cierre de Edge a veces tarda minutos: no esperarlo más de 10 s (process.exit lo termina).
+  await Promise.race([browser.close().catch(() => {}), new Promise((r) => setTimeout(r, 10_000))]);
 }
 
 try {
