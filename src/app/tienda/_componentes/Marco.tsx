@@ -4,8 +4,10 @@ import { ShoppingCart } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
+import { resumenHorario } from "@/lib/tienda/envio";
 import { formatoPrecio } from "@/lib/tienda/formato";
 import { Encabezado } from "./Encabezado";
+import { AvisoFueraDeHorario } from "./Horario";
 import { useTienda } from "./TiendaContexto";
 
 /** Encabezado, contenido, barra de "Ver carrito" en el celular y pie. */
@@ -15,6 +17,7 @@ export function Marco({ children }: { children: ReactNode }) {
   const router = useRouter();
   const enCarrito = ruta?.startsWith("/tienda/carrito");
   const productos = carritoListo ? resumen.lineas.length : 0;
+  const horario = resumenHorario(catalogo.config.horario);
 
   const buscar = (v: string) => {
     setBusqueda(v);
@@ -28,7 +31,11 @@ export function Marco({ children }: { children: ReactNode }) {
       {catalogo.config.aviso ? (
         <p className="bg-t-highlight text-t-on-highlight text-sm font-semibold text-center px-4 py-2">{catalogo.config.aviso}</p>
       ) : null}
-      <main className="mx-auto w-full max-w-[1200px] px-4 py-4 flex-1 min-w-0">{children}</main>
+      <main className="mx-auto w-full max-w-[1200px] px-4 py-4 flex-1 min-w-0 flex flex-col gap-4">
+        {/* En el carrito va al lado del botón; en el pedido, la pantalla tiene su propio aviso. */}
+        {catalogo.config.abierta && !enCarrito && !ruta?.startsWith("/tienda/pedido") ? <AvisoFueraDeHorario horario={catalogo.config.horario} /> : null}
+        <div className="min-w-0">{children}</div>
+      </main>
 
       {productos > 0 && !enCarrito && ruta !== "/tienda/diseno" ? (
         <div className="sticky bottom-0 z-20 md:hidden bg-t-surface border-t border-t-border px-4 py-2 shadow-t-pop">
@@ -51,6 +58,11 @@ export function Marco({ children }: { children: ReactNode }) {
       <footer className="bg-t-surface-alt text-t-muted text-xs text-center px-4 py-5 mt-6">
         <p className="font-bold text-t-text">Supermercado El Nuevo Rural</p>
         {catalogo.config.direccion_retiro ? <p>{catalogo.config.direccion_retiro}</p> : null}
+        {horario ? (
+          <p className="mt-1" data-test="horario-pie">
+            Horario: {horario}
+          </p>
+        ) : null}
         <p className="mt-1">Precios con IVA incluido. Los productos que se pesan se cobran según la balanza.</p>
         {catalogo.creditoOff ? (
           <p className="mt-1" data-test="credito-fotos">

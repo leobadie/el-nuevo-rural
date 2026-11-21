@@ -2,6 +2,7 @@
 import { createClient as crearCliente } from "@supabase/supabase-js";
 import { unstable_cache } from "next/cache";
 import { fetchConTimeout } from "@/lib/supabase/fetchConTimeout";
+import type { ConfigEnvio, Horario } from "./envio";
 import { nombreLindo, normalizar } from "./formato";
 import type { ProductoPublico } from "./pedido";
 
@@ -25,7 +26,8 @@ export type ConfigPublica = {
   retiro_activo: boolean;
   envio_activo: boolean;
   aviso: string | null;
-};
+  horario: Horario | null;
+} & ConfigEnvio;
 
 export type Catalogo = {
   config: ConfigPublica;
@@ -56,13 +58,16 @@ const POR_PAGINA = 1000; // tope por pedido de PostgREST en Supabase
 async function leerCatalogo(): Promise<Catalogo> {
   const sb = clienteAnonimo();
   const [cfg, cats] = await Promise.all([
-    sb.from("tienda_config").select("abierta, whatsapp, direccion_retiro, retiro_activo, envio_activo, aviso").maybeSingle(),
+    sb.from("tienda_config").select(
+      "abierta, whatsapp, direccion_retiro, retiro_activo, envio_activo, aviso, horario, costo_envio_centavos, envio_gratis_desde_centavos, minimo_envio_centavos",
+    ).maybeSingle(),
     sb.from("tienda_categorias").select("slug, nombre, orden").order("orden").order("nombre"),
   ]);
   if (cfg.error) throw new Error(`tienda_config: ${cfg.error.message}`);
   if (cats.error) throw new Error(`tienda_categorias: ${cats.error.message}`);
   const config: ConfigPublica = cfg.data ?? {
     abierta: false, whatsapp: null, direccion_retiro: null, retiro_activo: true, envio_activo: true, aviso: null,
+    horario: null, costo_envio_centavos: null, envio_gratis_desde_centavos: null, minimo_envio_centavos: 0,
   };
 
   const filas: FilaProducto[] = [];
@@ -115,7 +120,7 @@ async function leerCatalogo(): Promise<Catalogo> {
 }
 
 /** Catálogo cacheado; se invalida al importar o al cambiar la config (updateTag). */
-const catalogoCacheado = unstable_cache(leerCatalogo, ["tienda-catalogo-v2"], {
+const catalogoCacheado = unstable_cache(leerCatalogo, ["tienda-catalogo-v3"], {
   tags: [TAG_CATALOGO],
   revalidate: 600,
 });

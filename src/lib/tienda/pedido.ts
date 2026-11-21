@@ -1,6 +1,7 @@
 // Lógica pura del lado del cliente: búsqueda, carrito y mensaje de WhatsApp.
 // Sin React ni Supabase: lo prueba verificacion/tienda-pedido.mts.
 
+import { textoEnvio } from "./envio.ts";
 import { formatoPeso, formatoPrecio, nombreLindo, normalizar, subtotalCentavos } from "./formato.ts";
 
 /** Lo que la tienda manda al navegador por cada producto (nombres cortos: son ~2.200). */
@@ -121,7 +122,20 @@ export type PedidoParaMensaje = {
   total_centavos: number;
   total_aproximado: boolean;
   lineas: LineaPedido[];
+  /** 036: subtotal y envío (pedidos viejos no los traen: el envío sale "a confirmar"). */
+  subtotal_centavos?: number;
+  costo_envio_centavos?: number;
+  envio_a_confirmar?: boolean;
+  /** Se hizo fuera del horario de atención (lo calcula quien arma el mensaje). */
+  fuera_de_horario?: boolean;
 };
+
+/** "$ 1.500", "gratis" o "a confirmar" para un pedido guardado. */
+export function envioDelPedido(p: PedidoParaMensaje): string {
+  const costo = p.costo_envio_centavos ?? 0;
+  const aConfirmar = p.envio_a_confirmar ?? p.costo_envio_centavos === undefined;
+  return textoEnvio({ aConfirmar, gratis: !aConfirmar && costo === 0, costo });
+}
 
 const PAGO = { efectivo: "Efectivo", transferencia: "Transferencia", tarjeta: "Tarjeta" } as const;
 
@@ -131,13 +145,15 @@ export function mensajeWhatsapp(p: PedidoParaMensaje): string {
     const cant = l.fraccionable ? formatoPeso(Number(l.cantidad)) : `${l.cantidad} ×`;
     return `• ${cant} ${nombre} — ${l.fraccionable ? "aprox. " : ""}${formatoPrecio(l.subtotal_centavos)}`;
   });
-  const entrega =
-    p.entrega === "retiro" ? "Retiro en el local" : `Envío a domicilio: ${p.direccion} (costo de envío a confirmar)`;
+  const envio = p.entrega === "envio" ? envioDelPedido(p) : null;
+  const entrega = p.entrega === "retiro" ? "Retiro en el local" : `Envío a domicilio: ${p.direccion}`;
   return [
     `¡Hola! Quiero hacer este pedido (#${p.numero}):`,
     "",
     ...lineas,
     "",
+    ...(envio !== null && p.subtotal_centavos !== undefined ? [`Subtotal: ${formatoPrecio(p.subtotal_centavos)}`] : []),
+    ...(envio !== null ? [`Envío: ${envio}`] : []),
     `*Total${p.total_aproximado ? " aproximado" : ""}: ${formatoPrecio(p.total_centavos)}*`,
     ...(p.total_aproximado ? ["(los productos que se pesan se cobran según la balanza)"] : []),
     "",
@@ -146,6 +162,7 @@ export function mensajeWhatsapp(p: PedidoParaMensaje): string {
     `Nombre: ${p.nombre}`,
     `Teléfono: ${p.telefono}`,
     ...(p.nota ? [`Nota: ${p.nota}`] : []),
+    ...(p.fuera_de_horario ? ["", "(Pedido hecho fuera de horario: se prepara cuando abran)"] : []),
   ]
     .join("\n")
     .replace(/ | /g, " ");
@@ -168,6 +185,10 @@ export function explicarError(mensaje: string): { campo?: string; texto: string 
   if (m.startsWith("direccion")) return { campo: "direccion", texto: "Para el envío necesitamos la dirección." };
   if (m.startsWith("pago")) return { campo: "forma_pago", texto: "Elegí cómo vas a pagar." };
   if (m.startsWith("entrega")) return { campo: "entrega", texto: "Elegí retiro o envío." };
+  if (m.startsWith("minimo")) {
+    const min = Number(m.replace(/\D/g, ""));
+    return { campo: "entrega", texto: min > 0 ? `La compra mínima para envío es ${formatoPrecio(min)}. Podés retirarlo en el local sin mínimo.` : "No llegás a la compra mínima para envío." };
+  }
   if (m.startsWith("vacio")) return { texto: "Tu carrito está vacío." };
   if (m.startsWith("no disponible")) return { texto: "Un producto del carrito ya no está disponible. Revisá el carrito." };
   if (m.startsWith("cantidad")) return { texto: "Hay una cantidad que no es válida. Revisá el carrito." };

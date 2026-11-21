@@ -48,10 +48,40 @@ const check = (id, desc, ok, detail) => {
 };
 const plano = (s) => s.replace(/[\u00a0\u202f\s]+/g, " ").trim();
 
+// La prueba usa su propia configuración de envío y horario (036) y al final deja la original.
+const CAMPOS_CFG = "abierta, whatsapp, costo_envio_centavos, envio_gratis_desde_centavos, minimo_envio_centavos, horario";
+const COSTO_ENVIO = 150000; // $ 1.500
+let cfgOriginal = null;
+
+/** Vence el catálogo cacheado del servidor de desarrollo (src/app/tienda/refrescar). */
+async function refrescar() {
+  const r = await fetch(`${URL_BASE}/tienda/refrescar`, { method: "POST" });
+  if (!r.ok) throw new Error(`/tienda/refrescar respondió ${r.status}`);
+}
+
+/** Un horario con una sola franja dentro de 3 días: ahora siempre está "fuera de horario". */
+function horarioCerradoAhora() {
+  const diaAr = new Date(Date.now() - 3 * 3600_000).getUTCDay();
+  return { [String((diaAr + 3) % 7)]: [["8:00", "9:00"]] };
+}
+
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   await admin.from("tienda_pedidos").delete().eq("telefono", TEL);
 
+  cfgOriginal = (await admin.from("tienda_config").select(CAMPOS_CFG).eq("id", true).single()).data;
+  const prep = await admin
+    .from("tienda_config")
+    .update({
+      abierta: true,
+      costo_envio_centavos: COSTO_ENVIO,
+      envio_gratis_desde_centavos: 1_000_000_000, // nunca gratis en esta prueba ($ 10 millones)
+      minimo_envio_centavos: 0,
+      horario: horarioCerradoAhora(),
+    })
+    .eq("id", true);
+  if (prep.error) throw new Error(`no se pudo preparar la config (¿falta la 036?): ${prep.error.message}`);
+  await refrescar();
   const cfg = (await admin.from("tienda_config").select("abierta, whatsapp").eq("id", true).single()).data;
   if (!cfg?.abierta || !cfg?.whatsapp) {
     console.error("La tienda tiene que estar abierta y con WhatsApp cargado (desde /catalogo).");
@@ -150,6 +180,12 @@ async function main() {
   const guardado = await page.evaluate(() => localStorage.getItem("tienda-carrito-v1"));
   check("R16b", "El navegador guarda códigos y cantidades, no precios", /^\[\["[^"]+",2\],\["[^"]+",0\.5\]\]$/.test(guardado ?? ""), guardado);
 
+  // ---------- Horario (036) ----------
+  const avisoHorario = plano((await page.locator('[data-test="fuera-de-horario"]').first().innerText().catch(() => "")) ?? "");
+  check("R23a", "Fuera de horario la tienda avisa que se puede pedir igual y cuándo abre", /Ahora estamos cerrados/.test(avisoHorario) && /a las 8:00/.test(avisoHorario), avisoHorario);
+  const pie = plano((await page.locator('[data-test="horario-pie"]').innerText().catch(() => "")) ?? "");
+  check("R23b", "El pie muestra el horario de la semana", /Horario: .*8:00–9:00/.test(pie) && pie.includes("cerrado"), pie);
+
   // ---------- Carrito y pedido ----------
   await page.getByRole("link", { name: /^Carrito/ }).click();
   await page.waitForSelector("#titulo-carrito");
@@ -174,6 +210,16 @@ async function main() {
   await pausa();
   check("R18c", "Envío sin dirección pide la dirección", (await page.getByText(/Poné la dirección/).count()) === 1);
   await page.getByLabel("Dirección").fill("San Martín 450");
+  check("R18d", "Al corregir la dirección, el error se va", (await page.getByText(/Poné la dirección/).count()) === 0);
+  const envioTxt = plano(await page.locator('[data-test="envio"]').innerText().catch(() => ""));
+  const subtotalTxt = plano(await page.locator('[data-test="subtotal"]').innerText().catch(() => ""));
+  const totalConEnvio = plano(await page.locator('[data-test="total"]').innerText());
+  check("R24a", "Con envío, el carrito muestra subtotal, envío ($ 1.500) y el total con envío",
+    envioTxt === "$ 1.500" && subtotalTxt === "$ 32.700" && totalConEnvio === "$ 34.200", `${subtotalTxt} + ${envioTxt} = ${totalConEnvio}`);
+  const faltaGratis = plano(await page.locator('[data-test="falta-gratis"]').innerText().catch(() => ""));
+  check("R24b", "Avisa cuánto falta para el envío gratis", /Te faltan \$ [\d.]+ para el envío gratis/.test(faltaGratis), faltaGratis);
+  check("R24c", "Fuera de horario el carrito lo avisa junto al botón", (await page.locator('[data-test="fuera-de-horario"]').count()) === 1);
+  await page.screenshot({ path: path.join(OUT, "tienda-carrito-envio-desktop.png"), fullPage: true, caret: "initial" });
   await page.getByText("Transferencia", { exact: true }).click();
   await page.getByLabel("Nota (opcional)").fill("Prueba automática, no preparar");
   await page.getByRole("button", { name: /Enviar pedido por WhatsApp/ }).click();
@@ -196,6 +242,11 @@ async function main() {
 
   const enBase = (await admin.from("tienda_pedidos").select("total_centavos, total_aproximado, entrega").eq("numero", numero).single()).data;
   const totalMensaje = Number((texto.match(/Total aproximado: \$ ([\d.]+)/)?.[1] ?? "").replace(/\./g, "")) * 100;
+  check("R24d", "El mensaje trae subtotal, envío y el total con envío",
+    texto.includes("Subtotal: $ 32.700\nEnvío: $ 1.500\n*Total aproximado: $ 34.200*"), texto.split("\n").filter((l) => /Subtotal|Envío:|Total/.test(l)).join(" / "));
+  check("R24e", "El mensaje avisa que el pedido se hizo fuera de horario", texto.includes("fuera de horario"));
+  const envioBase = (await admin.from("tienda_pedidos").select("costo_envio_centavos, subtotal_centavos").eq("numero", numero).single()).data;
+  check("R24f", "La base guardó el costo de envío", envioBase?.costo_envio_centavos === COSTO_ENVIO && envioBase?.subtotal_centavos === 3270000, JSON.stringify(envioBase));
   check("R19d", "El total del mensaje es el que guardó la base", enBase && enBase.total_centavos === totalMensaje, `${enBase?.total_centavos} / ${totalMensaje}`);
 
   await page.goto(urlPedido.replace("&nuevo=1", ""), { waitUntil: "domcontentloaded" });
@@ -234,6 +285,11 @@ async function main() {
   );
   check("R21d", "Botones del carrito de al menos 44 px", botonesChicos.length === 0, botonesChicos.join(", "));
   await m.screenshot({ path: path.join(OUT, "tienda-carrito-movil.png"), fullPage: true, caret: "initial" });
+  await m.getByRole("radio", { name: /Envío/ }).click();
+  await pausa(300, m);
+  const anchoEnvio = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  check("R21e", "Carrito con envío a 375 px sin scroll horizontal", anchoEnvio <= 0, `${anchoEnvio}px`);
+  await m.screenshot({ path: path.join(OUT, "tienda-carrito-envio-movil.png"), fullPage: true, caret: "initial" });
   await movil.close();
 
   check("R22", "Sin errores de JavaScript en consola", errores.length === 0, errores.join(" | ").slice(0, 400));
@@ -250,6 +306,11 @@ try {
 } finally {
   const { error } = await admin.from("tienda_pedidos").delete().eq("telefono", TEL);
   check("LIMP", "Se borró el pedido de prueba", !error, error?.message ?? "");
+  if (cfgOriginal) {
+    const r = await admin.from("tienda_config").update(cfgOriginal).eq("id", true);
+    await refrescar().catch(() => {});
+    check("LIMP2", "La configuración de la tienda quedó como estaba", !r.error, r.error?.message ?? (cfgOriginal.abierta ? "abierta" : "cerrada"));
+  }
 }
 const fallidos = results.filter((r) => !r.ok);
 console.log("\n=== Verificación de la tienda (punta a punta) ===\n");

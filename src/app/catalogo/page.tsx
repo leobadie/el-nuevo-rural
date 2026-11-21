@@ -16,7 +16,7 @@ export default async function CatalogoPage() {
   if (!user) redirect("/login");
 
   const [cfg, imp, cuenta] = await Promise.all([
-    supabase.from("tienda_config").select("abierta, whatsapp, direccion_retiro").maybeSingle(),
+    supabase.from("tienda_config").select("abierta, whatsapp, direccion_retiro, costo_envio_centavos, envio_gratis_desde_centavos, minimo_envio_centavos, horario").maybeSingle(),
     supabase
       .from("tienda_importaciones")
       .select("archivo, filas, nuevos, cambios_de_precio, retirados, creado_el")
@@ -46,7 +46,10 @@ export default async function CatalogoPage() {
       </div>
       <CatalogoAdmin
         faltaMigracion={faltaMigracion}
-        config={(cfg.data as ConfigAdmin | null) ?? { abierta: false, whatsapp: null, direccion_retiro: null }}
+        config={(cfg.data as ConfigAdmin | null) ?? {
+          abierta: false, whatsapp: null, direccion_retiro: null,
+          costo_envio_centavos: null, envio_gratis_desde_centavos: null, minimo_envio_centavos: 0, horario: null,
+        }}
         ultima={(imp.data as UltimaImportacion | null) ?? null}
         productosPublicados={cuenta.count ?? 0}
       />

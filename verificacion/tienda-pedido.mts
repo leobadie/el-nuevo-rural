@@ -105,10 +105,11 @@ caso("mensaje: número, líneas, total aproximado, entrega y datos", () => {
       "• 2 × Aceite de girasol Natura 1x1500 cc — $ 15.200",
       "• 500 g Molleja — aprox. $ 17.500",
       "",
+      "Envío: a confirmar",
       "*Total aproximado: $ 26.450*",
       "(los productos que se pesan se cobran según la balanza)",
       "",
-      "Entrega: Envío a domicilio: San Martín 450 (costo de envío a confirmar)",
+      "Entrega: Envío a domicilio: San Martín 450",
       "Pago: Transferencia",
       "Nombre: Ana",
       "Teléfono: 3549123456",
@@ -122,6 +123,24 @@ caso("mensaje: retiro, sin nota y sin pesables", () => {
   assert.ok(m.includes("*Total: $ 15.200*"));
   assert.ok(!m.includes("Nota:") && !m.includes("balanza"));
 });
+caso("mensaje (036): subtotal, costo de envío y total con envío", () => {
+  const m = mensajeWhatsapp({ ...PEDIDO, subtotal_centavos: 3270000, costo_envio_centavos: 150000, envio_a_confirmar: false, total_centavos: 3420000 });
+  assert.ok(m.includes("Subtotal: $ 32.700\nEnvío: $ 1.500\n*Total aproximado: $ 34.200*"), m);
+});
+caso("mensaje (036): envío gratis y a confirmar", () => {
+  const gratis = mensajeWhatsapp({ ...PEDIDO, subtotal_centavos: 3270000, costo_envio_centavos: 0, envio_a_confirmar: false });
+  assert.ok(gratis.includes("Envío: gratis"));
+  const aConf = mensajeWhatsapp({ ...PEDIDO, subtotal_centavos: 3270000, costo_envio_centavos: 0, envio_a_confirmar: true });
+  assert.ok(aConf.includes("Envío: a confirmar"));
+});
+caso("mensaje (036): retiro no menciona el envío", () => {
+  const m = mensajeWhatsapp({ ...PEDIDO, entrega: "retiro", subtotal_centavos: 3270000, costo_envio_centavos: 0, envio_a_confirmar: false });
+  assert.ok(!m.includes("Envío:") && !m.includes("Subtotal:"));
+});
+caso("mensaje (036): fuera de horario lo avisa al final", () => {
+  assert.ok(mensajeWhatsapp({ ...PEDIDO, fuera_de_horario: true }).endsWith("(Pedido hecho fuera de horario: se prepara cuando abran)"));
+  assert.ok(!mensajeWhatsapp(PEDIDO).includes("fuera de horario"));
+});
 caso("enlace de WhatsApp: sólo dígitos y texto codificado", () => {
   const e = enlaceWhatsapp("+54 9 3549 12-3456", "Hola & chau\n#1");
   assert.equal(e, "https://wa.me/5493549123456?text=Hola%20%26%20chau%0A%231");
@@ -131,6 +150,9 @@ caso("errores de la base traducidos", () => {
   assert.match(explicarError("tienda: cerrada").texto, /cerrada/);
   assert.match(explicarError('Error: tienda: no disponible 283').texto, /ya no está/);
   assert.match(explicarError("cualquier otra cosa").texto, /No pudimos/);
+  const min = explicarError("ERROR: tienda: minimo 1000000");
+  assert.equal(min.campo, "entrega");
+  assert.match(min.texto.replace(/ /g, " "), /mínima para envío es \$ 10\.000/);
 });
 
 console.log(`\n${n} casos, todos bien`);

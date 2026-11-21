@@ -4,10 +4,12 @@ import { MessageCircle, Store, Truck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { calcularEnvio, textoEnvio } from "@/lib/tienda/envio";
 import { formatoPrecio, pasoGramos } from "@/lib/tienda/formato";
 import { enviarPedido, type DatosPedido } from "../../acciones";
 import { Boton } from "../../_componentes/Boton";
 import { Cantidad } from "../../_componentes/Cantidad";
+import { AvisoFueraDeHorario } from "../../_componentes/Horario";
 import { useTienda } from "../../_componentes/TiendaContexto";
 import { Aviso, Campo, EstadoVacio, Segmentado } from "../../_componentes/Varios";
 
@@ -41,6 +43,8 @@ export function CarritoVista() {
   const [errores, setErrores] = useState<Errores>({});
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
   const [enviando, iniciar] = useTransition();
+  // Al corregir un campo, su error se va (no queda en rojo algo que ya está bien).
+  const limpiarError = (campo: keyof Errores) => setErrores((e) => (e[campo] ? { ...e, [campo]: undefined } : e));
 
   if (!carritoListo) return <p className="text-t-muted py-10 text-center">Cargando tu carrito…</p>;
 
@@ -58,6 +62,12 @@ export function CarritoVista() {
     );
   }
 
+  // Misma regla que la base (036): la base recalcula y manda ella.
+  const envio = calcularEnvio(cfg, resumen.total);
+  const conEnvio = entrega === "envio";
+  const bajoMinimo = conEnvio && envio.faltaMinimo > 0;
+  const total = resumen.total + (conEnvio ? envio.costo : 0);
+
   const validar = (): Errores => {
     const e: Errores = {};
     if (nombre.trim().length < 2) e.nombre = "Poné tu nombre.";
@@ -71,6 +81,7 @@ export function CarritoVista() {
     const e = validar();
     setErrores(e);
     setErrorGeneral(null);
+    if (bajoMinimo) return;
     if (Object.keys(e).length) {
       document.getElementById(`campo-${Object.keys(e)[0]}`)?.focus();
       return;
@@ -140,12 +151,33 @@ export function CarritoVista() {
           ))}
         </ul>
 
-        <div className="flex items-center justify-between rounded-t-md bg-t-surface-alt px-4 py-3">
-          <span className="font-bold">{resumen.aproximado ? "Total aproximado" : "Total"}</span>
-          <span className="text-2xl font-extrabold tabular-nums" data-test="total">
-            {formatoPrecio(resumen.total)}
-          </span>
+        <div className="flex flex-col gap-1 rounded-t-md bg-t-surface-alt px-4 py-3">
+          {conEnvio ? (
+            <>
+              <p className="flex justify-between text-sm">
+                <span>Subtotal</span>
+                <span className="tabular-nums" data-test="subtotal">{formatoPrecio(resumen.total)}</span>
+              </p>
+              <p className="flex justify-between text-sm">
+                <span>Envío</span>
+                <span className={`tabular-nums ${envio.gratis ? "font-bold text-t-success" : ""}`} data-test="envio">
+                  {envio.gratis ? "Gratis" : textoEnvio(envio)}
+                </span>
+              </p>
+            </>
+          ) : null}
+          <p className="flex items-center justify-between">
+            <span className="font-bold">{resumen.aproximado ? "Total aproximado" : "Total"}</span>
+            <span className="text-2xl font-extrabold tabular-nums" data-test="total">
+              {formatoPrecio(total)}
+            </span>
+          </p>
         </div>
+        {conEnvio && !bajoMinimo && envio.faltaGratis > 0 ? (
+          <p className="text-sm font-semibold text-t-success" data-test="falta-gratis">
+            Te faltan {formatoPrecio(envio.faltaGratis)} para el envío gratis.
+          </p>
+        ) : null}
         {resumen.aproximado ? (
           <Aviso>Los productos que se pesan se cobran según lo que marque la balanza: el total final puede variar un poco.</Aviso>
         ) : null}
@@ -163,7 +195,7 @@ export function CarritoVista() {
           <p className="text-sm text-t-muted -mt-2">Retirás en {cfg.direccion_retiro}.</p>
         ) : null}
 
-        <Campo id="campo-nombre" etiqueta="Nombre" autoComplete="name" value={nombre} onChange={(e) => setNombre(e.target.value)} error={errores.nombre} maxLength={80} />
+        <Campo id="campo-nombre" etiqueta="Nombre" autoComplete="name" value={nombre} onChange={(e) => { setNombre(e.target.value); limpiarError("nombre"); }} error={errores.nombre} maxLength={80} />
         <Campo
           id="campo-telefono"
           etiqueta="Teléfono (WhatsApp)"
@@ -172,7 +204,7 @@ export function CarritoVista() {
           autoComplete="tel"
           placeholder="3549 123456"
           value={telefono}
-          onChange={(e) => setTelefono(e.target.value)}
+          onChange={(e) => { setTelefono(e.target.value); limpiarError("telefono"); }}
           error={errores.telefono}
           maxLength={25}
         />
@@ -181,9 +213,9 @@ export function CarritoVista() {
             id="campo-direccion"
             etiqueta="Dirección"
             autoComplete="street-address"
-            ayuda="Calle, número y alguna referencia. El costo del envío te lo confirmamos por WhatsApp."
+            ayuda={`Calle, número y alguna referencia.${envio.aConfirmar ? " El costo del envío te lo confirmamos por WhatsApp." : ""}`}
             value={direccion}
-            onChange={(e) => setDireccion(e.target.value)}
+            onChange={(e) => { setDireccion(e.target.value); limpiarError("direccion"); }}
             error={errores.direccion}
             maxLength={200}
           />
@@ -219,6 +251,15 @@ export function CarritoVista() {
           />
         </div>
 
+        {bajoMinimo ? (
+          <div data-test="bajo-minimo">
+            <Aviso tipo="atencion">
+              La compra mínima para envío es {formatoPrecio(cfg.minimo_envio_centavos ?? 0)} (te faltan {formatoPrecio(envio.faltaMinimo)}).
+              {cfg.retiro_activo ? " Si lo retirás en el local no hay mínimo." : ""}
+            </Aviso>
+          </div>
+        ) : null}
+        <AvisoFueraDeHorario horario={cfg.horario} />
         {errorGeneral ? <Aviso tipo="error">{errorGeneral}</Aviso> : null}
 
         <Boton
@@ -226,6 +267,7 @@ export function CarritoVista() {
           tamano="lg"
           ancho
           cargando={enviando}
+          disabled={bajoMinimo}
           onClick={enviar}
           icono={<MessageCircle aria-hidden className="size-5" />}
         >

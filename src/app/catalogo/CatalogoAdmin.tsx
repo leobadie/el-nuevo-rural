@@ -1,14 +1,49 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Store } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, FileSpreadsheet, Loader2, Store, Truck } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { DIAS, ORDEN_SEMANA, validarHorario, type Horario } from "@/lib/tienda/envio";
 import { formatoPrecio } from "@/lib/tienda/formato";
 import { HOJA_XRP, prepararFilas, type Preparado } from "@/lib/tienda/importar";
 import { ErrorXlsx, leerHoja } from "@/lib/tienda/xlsx";
 import { refrescarTienda } from "./acciones";
 
-export type ConfigAdmin = { abierta: boolean; whatsapp: string | null; direccion_retiro: string | null };
+export type ConfigAdmin = {
+  abierta: boolean;
+  whatsapp: string | null;
+  direccion_retiro: string | null;
+  costo_envio_centavos: number | null;
+  envio_gratis_desde_centavos: number | null;
+  minimo_envio_centavos: number | null;
+  horario: Horario | null;
+};
+
+/** Lo que se edita: 2 franjas por día, como texto "HH:MM" (vacío = sin franja). */
+type HorarioEditable = Record<string, [[string, string], [string, string]]>;
+
+const conCero = (h: string) => (/^\d:/.test(h) ? "0" + h : h); // <input type="time"> pide "08:00"
+
+function aEditable(h: Horario | null): HorarioEditable {
+  const e: HorarioEditable = {};
+  for (let d = 0; d <= 6; d++) {
+    const f = h?.[String(d) as keyof Horario] ?? [];
+    e[String(d)] = [
+      [conCero(f[0]?.[0] ?? ""), conCero(f[0]?.[1] ?? "")],
+      [conCero(f[1]?.[0] ?? ""), conCero(f[1]?.[1] ?? "")],
+    ];
+  }
+  return e;
+}
+
+/** "$ 1.500" / "1500" / "" → centavos (null si está vacío; NaN si no es un número). */
+function pesosACentavos(v: string): number | null {
+  const limpio = v.replace(/[$\s.]/g, "").replace(",", ".");
+  if (!limpio) return null;
+  const n = Number(limpio);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : NaN;
+}
+const centavosAPesos = (c: number | null) => (c ? String(Math.round(c / 100)) : "");
 export type UltimaImportacion = {
   archivo: string;
   filas: number;
@@ -73,6 +108,10 @@ export function CatalogoAdmin({
   const [cfg, setCfg] = useState(inicial);
   const [guardandoCfg, setGuardandoCfg] = useState(false);
   const [msgCfg, setMsgCfg] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [costo, setCosto] = useState(centavosAPesos(inicial.costo_envio_centavos));
+  const [gratisDesde, setGratisDesde] = useState(centavosAPesos(inicial.envio_gratis_desde_centavos));
+  const [minimo, setMinimo] = useState(centavosAPesos(inicial.minimo_envio_centavos));
+  const [horario, setHorario] = useState<HorarioEditable>(() => aEditable(inicial.horario));
 
   if (faltaMigracion) {
     return (
@@ -139,10 +178,28 @@ export function CatalogoAdmin({
       setMsgCfg({ ok: false, texto: "Para abrir la tienda primero cargá el número de WhatsApp: ahí llegan los pedidos." });
       return;
     }
+    const montos = { costo: pesosACentavos(costo), gratis: pesosACentavos(gratisDesde), minimo: pesosACentavos(minimo) };
+    if ([montos.costo, montos.gratis, montos.minimo].some((m) => Number.isNaN(m))) {
+      setMsgCfg({ ok: false, texto: "Los montos del envío tienen que ser números en pesos, por ejemplo 1500." });
+      return;
+    }
+    const h = validarHorario(horario);
+    if (!h.ok) {
+      setMsgCfg({ ok: false, texto: "Horario: " + h.error });
+      return;
+    }
     setGuardandoCfg(true);
     const { error: e } = await sb
       .from("tienda_config")
-      .update({ abierta: cfg.abierta, whatsapp: wa || null, direccion_retiro: cfg.direccion_retiro?.trim() || null })
+      .update({
+        abierta: cfg.abierta,
+        whatsapp: wa || null,
+        direccion_retiro: cfg.direccion_retiro?.trim() || null,
+        costo_envio_centavos: montos.costo || null,
+        envio_gratis_desde_centavos: montos.gratis || null,
+        minimo_envio_centavos: montos.minimo ?? 0,
+        horario: Object.keys(h.horario).length ? h.horario : null,
+      })
       .eq("id", true);
     setGuardandoCfg(false);
     if (e) {
@@ -150,6 +207,7 @@ export function CatalogoAdmin({
       return;
     }
     setCfg((c) => ({ ...c, whatsapp: wa || null }));
+    setHorario(aEditable(h.horario));
     await refrescarTienda();
     setMsgCfg({ ok: true, texto: cfg.abierta ? "Guardado. La tienda está abierta." : "Guardado. La tienda está cerrada al público." });
   };
@@ -307,7 +365,7 @@ export function CatalogoAdmin({
         <h2 id="t-config" style={{ margin: "0 0 12px", fontSize: 17, display: "flex", alignItems: "center", gap: 8 }}>
           <Store size={20} color={ROJO} /> La tienda
         </h2>
-        <div style={{ display: "grid", gap: 12, maxWidth: 480 }}>
+        <div style={{ display: "grid", gap: 12, maxWidth: 560 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, fontSize: 15 }}>
             <input
               type="checkbox"
@@ -349,6 +407,72 @@ export function CatalogoAdmin({
               data-test="direccion"
             />
           </div>
+          <fieldset style={{ border: "1px solid #e0e0e0", borderRadius: 8, padding: 12, margin: 0, minWidth: 0 }}>
+            <legend style={{ fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 6, padding: "0 4px" }}>
+              <Truck size={18} color={ROJO} /> Envío a domicilio
+            </legend>
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
+              <Monto id="cfg-costo" etiqueta="Costo del envío" valor={costo} onCambiar={setCosto} test="costo-envio" />
+              <Monto id="cfg-gratis" etiqueta="Gratis desde" valor={gratisDesde} onCambiar={setGratisDesde} test="gratis-desde" />
+              <Monto id="cfg-minimo" etiqueta="Compra mínima" valor={minimo} onCambiar={setMinimo} test="minimo-envio" />
+            </div>
+            <p style={{ fontSize: 12, color: "#555", margin: "6px 0 0" }}>
+              En pesos. Vacío = no se aplica: sin costo, el envío queda &quot;a confirmar&quot; por WhatsApp. El mínimo es sólo
+              para envío; retirar no tiene mínimo.
+            </p>
+          </fieldset>
+
+          <fieldset style={{ border: "1px solid #e0e0e0", borderRadius: 8, padding: 12, margin: 0, minWidth: 0 }}>
+            <legend style={{ fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 6, padding: "0 4px" }}>
+              <Clock size={18} color={ROJO} /> Horario de atención
+            </legend>
+            <p style={{ fontSize: 12, color: "#555", margin: "0 0 8px" }}>
+              Hasta dos franjas por día (mañana y tarde). Un día vacío = cerrado. Fuera de horario se puede pedir igual y la
+              tienda avisa cuándo abren.
+            </p>
+            <div style={{ display: "grid", gap: 6 }}>
+              {ORDEN_SEMANA.map((d) => (
+                <div key={d} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }} data-test={"dia-" + d}>
+                  <span style={{ width: 82, fontWeight: 700, fontSize: 14, textTransform: "capitalize" }}>{DIAS[d]}</span>
+                  {([0, 1] as const).map((i) => (
+                    <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      {([0, 1] as const).map((j) => (
+                        <input
+                          key={j}
+                          type="time"
+                          aria-label={DIAS[d] + ", franja " + (i + 1) + ", " + (j === 0 ? "abre" : "cierra")}
+                          value={horario[String(d)][i][j]}
+                          onChange={(e) =>
+                            setHorario((h) => {
+                              const copia = structuredClone(h);
+                              copia[String(d)][i][j] = e.target.value;
+                              return copia;
+                            })
+                          }
+                          style={{ ...input, width: 104, padding: "0 6px" }}
+                        />
+                      ))}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setHorario((h) => {
+                  const c = structuredClone(h);
+                  for (const d of [2, 3, 4, 5, 6]) c[String(d)] = structuredClone(h["1"]);
+                  return c;
+                })
+              }
+              style={{ ...boton("#6b5a4e"), marginTop: 8 }}
+              data-test="copiar-lunes"
+            >
+              Copiar el lunes de martes a sábado
+            </button>
+          </fieldset>
+
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <button type="button" onClick={guardarCfg} disabled={guardandoCfg} style={boton(ROJO, guardandoCfg)} data-test="guardar-config">
               {guardandoCfg ? "Guardando…" : "Guardar"}
@@ -364,6 +488,22 @@ export function CatalogoAdmin({
           ) : null}
         </div>
       </section>
+    </div>
+  );
+}
+
+function Monto({ id, etiqueta, valor, onCambiar, test }: { id: string; etiqueta: string; valor: string; onCambiar: (v: string) => void; test: string }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <label htmlFor={id} style={{ fontSize: 13, fontWeight: 700 }}>
+        {etiqueta}
+      </label>
+      <div style={{ position: "relative" }}>
+        <span aria-hidden style={{ position: "absolute", left: 10, top: 11, color: "#555" }}>
+          $
+        </span>
+        <input id={id} inputMode="numeric" value={valor} onChange={(e) => onCambiar(e.target.value)} placeholder="0" style={{ ...input, paddingLeft: 24 }} data-test={test} />
+      </div>
     </div>
   );
 }

@@ -53,6 +53,8 @@
     "verificar:tienda-diseno": "node verificacion/tienda-diseno.mjs",
     "verificar:tienda-importar": "node verificacion/tienda-importar.mts",
     "verificar:tienda-pedido": "node verificacion/tienda-pedido.mts",
+    "verificar:tienda-envio": "node verificacion/tienda-envio.mts",
+    "verificar:base-tienda-envio": "node verificacion/base-tienda-envio.mts",
     "verificar:base-tienda": "node verificacion/base-tienda.mts",
     "verificar:tienda": "node verificacion/tienda.mjs",
     "verificar:tienda-fotos": "node verificacion/tienda-fotos.mts",
