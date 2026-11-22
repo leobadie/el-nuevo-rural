@@ -20,6 +20,7 @@ import type { Cheque, LimiteProveedor } from "@/lib/cheques/types";
 import type { LimiteCategoria, Movimiento, VentaXRP } from "@/lib/ingresos-egresos/types";
 import type { Colaborador, ParametrosEmpleados, RegistroAsistencia } from "@/lib/empleados/types";
 import type { CobroMunicipalidad, FacturaMunicipalidad, ImputacionCobro } from "@/lib/municipalidad/types";
+import { traerTodo } from "@/lib/supabase/traerTodo";
 
 const PARAMETROS_DEFAULT: ParametrosEmpleados = {
   horas_completa: 10.75,
@@ -59,8 +60,24 @@ export default async function Home() {
     cobrosMuniRes,
     imputacionesMuniRes,
   ] = await Promise.all([
-    esAdmin ? supabase.from("cheques").select("*") : Promise.resolve({ data: [] as Cheque[] }),
-    supabase.from("movimientos").select("*"),
+    esAdmin
+      ? traerTodo<Cheque>((desde, hasta, conTotal) =>
+          supabase
+            .from("cheques")
+            .select("*", { count: conTotal ? "exact" : undefined })
+            .order("creado_el", { ascending: true })
+            .order("id", { ascending: true })
+            .range(desde, hasta),
+        )
+      : Promise.resolve({ data: [] as Cheque[] }),
+    traerTodo<Movimiento>((desde, hasta, conTotal) =>
+      supabase
+        .from("movimientos")
+        .select("*", { count: conTotal ? "exact" : undefined })
+        .order("creado_el", { ascending: true })
+        .order("id", { ascending: true })
+        .range(desde, hasta),
+    ),
     esAdmin ? supabase.from("limites_proveedores_cheques").select("*") : Promise.resolve({ data: [] as LimiteProveedor[] }),
     supabase.from("limites_categorias").select("*"),
     supabase.from("colaboradores").select("*"),

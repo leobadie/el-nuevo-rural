@@ -6,6 +6,7 @@ import { leerCorteIE } from "@/lib/ingresos-egresos/corteServidor";
 import RentabilidadShell from "./RentabilidadShell";
 import type { Colaborador, ParametrosEmpleados, RegistroAsistencia } from "@/lib/empleados/types";
 import type { Movimiento, VentaXRP } from "@/lib/ingresos-egresos/types";
+import { traerTodo } from "@/lib/supabase/traerTodo";
 
 const PARAMETROS_DEFAULT: ParametrosEmpleados = {
   horas_completa: 10.75,
@@ -43,7 +44,14 @@ export default async function RentabilidadPage() {
   }
 
   const [movsRes, ventasXRPRes, colaboradoresRes, registrosRes, parametrosRes] = await Promise.all([
-    supabase.from("movimientos").select("*"),
+    traerTodo<Movimiento>((desde, hasta, conTotal) =>
+      supabase
+        .from("movimientos")
+        .select("*", { count: conTotal ? "exact" : undefined })
+        .order("creado_el", { ascending: true })
+        .order("id", { ascending: true })
+        .range(desde, hasta),
+    ),
     supabase.from("ventas_xrp").select("*"),
     supabase.from("colaboradores").select("*"),
     supabase.from("registros_asistencia").select("*"),

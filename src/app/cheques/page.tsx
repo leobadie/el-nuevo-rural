@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ChequesShell from "./ChequesShell";
 import type { Cheque, ChequeTercero, LimiteProveedor } from "@/lib/cheques/types";
+import { traerTodo } from "@/lib/supabase/traerTodo";
 
 export default async function ChequesPage() {
   const supabase = await createClient();
@@ -33,7 +34,14 @@ export default async function ChequesPage() {
   }
 
   const [chequesRes, tercerosRes, limitesRes] = await Promise.all([
-    supabase.from("cheques").select("*").order("creado_el", { ascending: true }),
+    traerTodo<Cheque>((desde, hasta, conTotal) =>
+      supabase
+        .from("cheques")
+        .select("*", { count: conTotal ? "exact" : undefined })
+        .order("creado_el", { ascending: true })
+        .order("id", { ascending: true })
+        .range(desde, hasta),
+    ),
     supabase.from("cheques_terceros").select("*").order("creado_el", { ascending: true }),
     supabase.from("limites_proveedores_cheques").select("*"),
   ]);

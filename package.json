@@ -39,6 +39,7 @@
     "verificar:corte": "node verificacion/corte-calculos.mts",
     "verificar:corte-navegador": "node verificacion/corte.mjs",
     "verificar:base-corte": "node verificacion/base-corte.mts",
+    "verificar:traer-todo": "node verificacion/traer-todo.mts",
     "verificar:descuento-calculos": "node verificacion/descuento-calculos.mts",
     "verificar:descuento": "node verificacion/descuento.mjs",
     "verificar:base-descuento": "node verificacion/base-descuento.mts",

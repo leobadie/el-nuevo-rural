@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { aplicarCorte, corteCuentaCorriente } from "@/lib/ingresos-egresos/corte";
 import { leerCorteIE } from "@/lib/ingresos-egresos/corteServidor";
+import { traerTodo } from "@/lib/supabase/traerTodo";
 import IngresosEgresosShell from "./IngresosEgresosShell";
 import type {
   Categoria,
@@ -49,7 +50,14 @@ export default async function IngresosEgresosPage({
     imputacionesRes,
     configProveedoresRes,
   ] = await Promise.all([
-    supabase.from("movimientos").select("*").order("creado_el", { ascending: true }),
+    traerTodo<Movimiento>((desde, hasta, conTotal) =>
+      supabase
+        .from("movimientos")
+        .select("*", { count: conTotal ? "exact" : undefined })
+        .order("creado_el", { ascending: true })
+        .order("id", { ascending: true })
+        .range(desde, hasta),
+    ),
     supabase.from("ventas_xrp").select("*").order("fecha", { ascending: true }),
     supabase.from("gastos_fijos").select("*").order("descripcion", { ascending: true }),
     supabase.from("proveedores").select("*").order("nombre", { ascending: true }),
