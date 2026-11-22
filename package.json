@@ -42,6 +42,7 @@
     "verificar:traer-todo": "node verificacion/traer-todo.mts",
     "verificar:cheque-a-proveedor-calculos": "node verificacion/cheque-a-proveedor-calculos.mts",
     "verificar:cheque-a-proveedor": "node verificacion/cheque-a-proveedor.mjs",
+    "verificar:base-cheque-a-proveedor": "node verificacion/base-cheque-a-proveedor.mts",
     "verificar:descuento-calculos": "node verificacion/descuento-calculos.mts",
     "verificar:descuento": "node verificacion/descuento.mjs",
     "verificar:base-descuento": "node verificacion/base-descuento.mts",
