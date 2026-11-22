@@ -15,6 +15,8 @@ import {
 import { fmtDateIE, fmtMoneyIE } from "@/lib/ingresos-egresos/calculos";
 import { RED, inputStyle, tdStyle, thStyle } from "@/lib/ingresos-egresos/estilos";
 import { hoyISO } from "@/lib/fechas";
+import { ElegirCheque, VistaReparto } from "../ChequeExistente";
+import type { ChequeBasico } from "@/lib/cheques/vinculo";
 import type {
   EntregaConSaldo,
   EntregaProveedor,
@@ -68,6 +70,8 @@ export default function CuentaProveedoresTab({
   onAddEntrega,
   onDeleteEntrega,
   onPagarEntrega,
+  onAplicarCheque,
+  chequesLibres,
   onImputar,
   onDesimputar,
   onSetCorte,
@@ -92,6 +96,9 @@ export default function CuentaProveedoresTab({
   }) => Promise<void>;
   onImputar: (aplicaciones: { movimiento_id: string; entrega_id: string; monto: number }[]) => Promise<void>;
   onDesimputar: (id: string) => Promise<void>;
+  /** Pagar con un cheque ya cargado en Control de Cheques (SPEC-cheque-a-proveedor.md). Devuelve el error o null. */
+  onAplicarCheque: (cheque: ChequeBasico, proveedor: string, entregaPrimeroId?: string | null) => Promise<string | null>;
+  chequesLibres: ChequeBasico[];
   /** Guarda el % de descuento por boleta de un proveedor (null = sin descuento). Devuelve el error, o null. */
   onSetDescuentoProveedor: (id: string, pct: number | null) => Promise<string | null>;
 }) {
@@ -120,6 +127,8 @@ export default function CuentaProveedoresTab({
         onAddEntrega={onAddEntrega}
         onDeleteEntrega={onDeleteEntrega}
         onPagarEntrega={onPagarEntrega}
+        onAplicarCheque={onAplicarCheque}
+        chequesLibres={chequesLibres}
         onImputar={onImputar}
         onDesimputar={onDesimputar}
         datosProveedor={proveedores.find((p) => p.nombre === seleccionado)}
@@ -546,6 +555,8 @@ function FichaProveedor({
   onAddEntrega,
   onDeleteEntrega,
   onPagarEntrega,
+  onAplicarCheque,
+  chequesLibres,
   onImputar,
   onDesimputar,
   datosProveedor,
@@ -573,6 +584,9 @@ function FichaProveedor({
   }) => Promise<void>;
   onImputar: (aplicaciones: { movimiento_id: string; entrega_id: string; monto: number }[]) => Promise<void>;
   onDesimputar: (id: string) => Promise<void>;
+  /** Pagar con un cheque ya cargado en Control de Cheques (SPEC-cheque-a-proveedor.md). Devuelve el error o null. */
+  onAplicarCheque: (cheque: ChequeBasico, proveedor: string, entregaPrimeroId?: string | null) => Promise<string | null>;
+  chequesLibres: ChequeBasico[];
 }) {
   const [pagando, setPagando] = useState<EntregaConSaldo | null>(null);
   const [aplicando, setAplicando] = useState<string | null>(null);
@@ -833,6 +847,13 @@ function FichaProveedor({
           entrega={pagando}
           proveedor={proveedor}
           pagosDisponibles={conDisponible}
+          pendientes={pendientes}
+          chequesLibres={chequesLibres}
+          onAplicarCheque={async (cheque) => {
+            const err = await onAplicarCheque(cheque, proveedor, pagando.id);
+            if (!err) setPagando(null);
+            return err;
+          }}
           onCerrar={() => setPagando(null)}
           onConfirmar={async (datos) => {
             await onPagarEntrega({ ...datos, proveedor, entregaId: pagando.id });
@@ -938,6 +959,9 @@ function PagarEntregaModal({
   entrega,
   proveedor,
   pagosDisponibles,
+  pendientes,
+  chequesLibres,
+  onAplicarCheque,
   onCerrar,
   onConfirmar,
   onAplicarExistente,
@@ -945,12 +969,16 @@ function PagarEntregaModal({
   entrega: EntregaConSaldo;
   proveedor: string;
   pagosDisponibles: PagoConSaldo[];
+  pendientes: EntregaConSaldo[];
+  chequesLibres: ChequeBasico[];
+  onAplicarCheque: (cheque: ChequeBasico) => Promise<string | null>;
   onCerrar: () => void;
   onConfirmar: (datos: { fecha: string; monto: number; medioPago: MedioPago; descripcion: string }) => Promise<void>;
   onAplicarExistente: (movimientoId: string, monto: number) => Promise<void>;
 }) {
   const hayDisponibles = pagosDisponibles.length > 0;
-  const [modo, setModo] = useState<"existente" | "nuevo">(hayDisponibles ? "existente" : "nuevo");
+  const [modo, setModo] = useState<"existente" | "cheque" | "nuevo">(hayDisponibles ? "existente" : "nuevo");
+  const [chequeElegido, setChequeElegido] = useState<ChequeBasico | null>(null);
   const [pagoId, setPagoId] = useState(pagosDisponibles[0]?.id ?? "");
   const pagoElegido = pagosDisponibles.find((p) => p.id === pagoId);
   const topeExistente = Math.min(entrega.saldo, pagoElegido?.disponible ?? 0);
@@ -965,6 +993,17 @@ function PagarEntregaModal({
 
   async function confirmar() {
     setError("");
+    if (modo === "cheque") {
+      if (!chequeElegido) {
+        setError("Elegí el cheque con el que pagaste.");
+        return;
+      }
+      setGuardando(true);
+      const err = await onAplicarCheque(chequeElegido);
+      setGuardando(false);
+      if (err) setError(err);
+      return;
+    }
     if (modo === "existente") {
       const num = parseFloat(montoAplicar);
       if (!pagoElegido) {
@@ -1033,8 +1072,8 @@ function PagarEntregaModal({
           {proveedor} · entrega del {fmtDateIE(entrega.fecha)} · debe <strong>{fmtMoneyIE(entrega.saldo)}</strong>
         </p>
 
-        {hayDisponibles && (
-          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          {hayDisponibles && (
             <button
               onClick={() => {
                 setModo("existente");
@@ -1043,8 +1082,19 @@ function PagarEntregaModal({
               style={tabStyle(modo === "existente")}
               data-test="modo-existente"
             >
-              Usar un pago ya cargado
+              Pago ya cargado
             </button>
+          )}
+          <button
+            onClick={() => {
+              setModo("cheque");
+              setError("");
+            }}
+            style={tabStyle(modo === "cheque")}
+            data-test="modo-cheque"
+          >
+            Cheque ya cargado
+          </button>
             <button
               onClick={() => {
                 setModo("nuevo");
@@ -1053,12 +1103,24 @@ function PagarEntregaModal({
               style={tabStyle(modo === "nuevo")}
               data-test="modo-nuevo"
             >
-              Cargar un pago nuevo
+              Pago nuevo
             </button>
-          </div>
-        )}
+        </div>
 
-        {modo === "existente" ? (
+        {modo === "cheque" ? (
+          <div style={{ display: "grid", gap: 10 }} data-test="form-cheque">
+            <ElegirCheque
+              cheques={chequesLibres}
+              proveedor={proveedor}
+              elegidoId={chequeElegido?.id ?? null}
+              onElegir={(c) => {
+                setChequeElegido(c);
+                setError("");
+              }}
+            />
+            {chequeElegido && <VistaReparto cheque={chequeElegido} pendientes={pendientes} entregaPrimeroId={entrega.id} />}
+          </div>
+        ) : modo === "existente" ? (
           <div style={{ display: "grid", gap: 10 }} data-test="form-existente">
             <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
               Pago a aplicar
@@ -1110,6 +1172,11 @@ function PagarEntregaModal({
                 <option value="Cheque">Cheque</option>
               </select>
             </label>
+            {medioPago === "Cheque" && (
+              <p style={{ fontSize: 11, color: AMBAR_TX, background: AMBAR_BG, borderRadius: 6, padding: "6px 8px", margin: 0 }} data-test="aviso-cheque-nuevo">
+                Se va a crear un cheque nuevo en Control de Cheques. Si ya lo cargaste ahí, usá &quot;Cheque ya cargado&quot;.
+              </p>
+            )}
             <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
               Descripción
               <input value={descripcion} onChange={(e) => setDescripcion(e.target.value)} style={inputStyle} />
@@ -1123,7 +1190,12 @@ function PagarEntregaModal({
           </div>
         )}
 
-        {modo === "existente" ? (
+        {modo === "cheque" ? (
+          <p style={{ fontSize: 11, color: "#888", margin: "12px 0 0" }} data-test="aviso-modo">
+            Se crea <strong>un egreso</strong> en Movimientos por el importe del cheque, vinculado al
+            cheque que ya está en Control de Cheques. <strong>No se crea otro cheque.</strong>
+          </p>
+        ) : modo === "existente" ? (
           <p
             style={{ fontSize: 11, color: AMBAR_TX, background: AMBAR_BG, borderRadius: 6, padding: "8px 10px", margin: "12px 0 0" }}
             data-test="aviso-modo"

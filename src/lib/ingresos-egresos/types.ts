@@ -12,6 +12,8 @@ export interface Movimiento {
   n_cheque_pago: string | null;
   fecha_cobro_cheque_pago: string | null;
   cheque_creado: boolean;
+  /** Cheque de Control de Cheques con el que se pagó (migración 037). Falta si la migración no está aplicada. */
+  cheque_id?: string | null;
   gasto_fijo_id: string | null;
   creado_el: string;
   modificado_el: string;

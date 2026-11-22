@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -20,6 +20,9 @@ import MensualTab from "./tabs/MensualTab";
 import CierreTab from "./tabs/CierreTab";
 import PedidosTab from "./tabs/PedidosTab";
 import HistorialTab from "./tabs/HistorialTab";
+import { AplicarChequeModal } from "./ChequeExistente";
+import { idsChequesUsados, puedeAplicarseADeuda, repartirCheque, type ChequeBasico } from "@/lib/cheques/vinculo";
+import { entregasConSaldo } from "@/lib/ingresos-egresos/cuentaProveedores";
 import type {
   Categoria,
   ConfigProveedores,
@@ -90,6 +93,9 @@ export default function IngresosEgresosShell({
   configProveedoresInicial,
   corteRegistros = null,
   guardadosAntesDelCorte = { movimientos: 0, ventasXRP: 0, pedidos: 0, entregas: 0 },
+  chequesIniciales = [],
+  chequesUsadosAntes = [],
+  chequeParaAplicar = null,
 }: {
   esAdmin: boolean;
   userId: string;
@@ -108,6 +114,12 @@ export default function IngresosEgresosShell({
   corteRegistros?: string | null;
   /** Lo cargado antes del corte, que sigue en la base: se cuenta en el aviso. */
   guardadosAntesDelCorte?: Guardados;
+  /** Cheques de Control de Cheques, para pagar con uno ya cargado (SPEC-cheque-a-proveedor.md). */
+  chequesIniciales?: ChequeBasico[];
+  /** Cheques usados por pagos de antes del corte, que no están en movimientosIniciales. */
+  chequesUsadosAntes?: string[];
+  /** Id de cheque que llega desde Control de Cheques ("Aplicar a deuda"): abre el modal. */
+  chequeParaAplicar?: string | null;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const { pedirConfirmacion, ConfirmModal } = useConfirmDialog();
@@ -128,13 +140,37 @@ export default function IngresosEgresosShell({
     initialTab && TABS.some((t) => t.key === initialTab) ? initialTab : "movimientos",
   );
   const [saveError, setSaveError] = useState("");
+  const [cheques, setCheques] = useState<ChequeBasico[]>(chequesIniciales);
+  const [chequeAAplicar, setChequeAAplicar] = useState<string | null>(chequeParaAplicar);
+  /** El último error de addMov, para mostrarlo dentro de un modal (que tapa el aviso rojo). */
+  const ultimoErrorMov = useRef("");
+
+  // El id del cheque viaja en la URL sólo para abrir el modal: se saca para que recargar la
+  // página no lo vuelva a abrir.
+  useEffect(() => {
+    if (!chequeParaAplicar) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("cheque");
+    window.history.replaceState(null, "", url.toString());
+  }, [chequeParaAplicar]);
+
+  /**
+   * Los que se pueden elegir (R2): no rechazados, sin pago vinculado —ni de antes ni de después
+   * del corte— y cargados desde el corte de registros. Los anteriores ya se usaron cuando no
+   * existía la cuenta corriente: ofrecerlos invitaría a cargar el mismo pago dos veces.
+   */
+  const chequesLibres = useMemo(() => {
+    const usadosAntes = chequesUsadosAntes.map((id) => ({ id: "", cheque_id: id, proveedor: null, descripcion: null, fecha: "" }));
+    const usados = idsChequesUsados([...movs, ...usadosAntes]);
+    return cheques.filter((c) => puedeAplicarseADeuda(c, usados, corteRegistros));
+  }, [cheques, movs, chequesUsadosAntes, corteRegistros]);
 
   const enriched = useMemo(() => buildSaldoAcumulado(movs), [movs]);
   const nombresProveedores = useMemo(() => proveedores.map((p) => p.nombre), [proveedores]);
   const nombresCategorias = useMemo(() => categorias.map((c) => c.nombre), [categorias]);
 
   async function crearChequeDesdeMovimiento(mov: Movimiento) {
-    const { error } = await supabase.from("cheques").insert({
+    const { data: nuevoCheque, error } = await supabase.from("cheques").insert({
       n_cheque: mov.n_cheque_pago || null,
       proveedor: mov.proveedor || mov.descripcion || "",
       fecha_emision: mov.fecha,
@@ -144,18 +180,60 @@ export default function IngresosEgresosShell({
       entregado: true,
       observaciones: `Generado desde Ingresos y Egresos: ${mov.descripcion}`,
       creado_por: userId,
-    });
-    if (error) {
+    })
+      .select("id, n_cheque, proveedor, fecha_emision, fecha_cobro, importe, rechazado, observaciones, creado_el")
+      .single();
+    if (error || !nuevoCheque) {
       setSaveError("El movimiento se guardó pero no se pudo crear el cheque asociado. Revisalo en Control de Cheques.");
+      return;
     }
+    setCheques((prev) => [...prev, nuevoCheque as ChequeBasico]);
+    // Se vincula para que este cheque no se ofrezca para otro pago (R8). Si la migración 037
+    // todavía no está aplicada esto falla sin consecuencias: el pago y el cheque ya están.
+    const { error: errVinculo } = await supabase.from("movimientos").update({ cheque_id: nuevoCheque.id }).eq("id", mov.id);
+    if (!errVinculo) setMovs((prev) => prev.map((m) => (m.id === mov.id ? { ...m, cheque_id: nuevoCheque.id } : m)));
+  }
+
+  /**
+   * Pagar con un cheque que ya está en Control de Cheques (SPEC-cheque-a-proveedor.md, R4/R5):
+   * un egreso por el importe del cheque, vinculado a él y sin crear otro, repartido primero en
+   * la entrega elegida (si hay) y después en las demás pendientes. Lo que sobra queda a cuenta.
+   * Devuelve el error para mostrar, o null.
+   */
+  async function aplicarCheque(cheque: ChequeBasico, proveedor: string, entregaPrimeroId?: string | null): Promise<string | null> {
+    if (!chequesLibres.some((c) => c.id === cheque.id)) return "Ese cheque ya está usado en otro pago.";
+    const pendientes = entregasConSaldo(entregas, imputaciones, proveedor).filter((e) => e.saldo > 0);
+    const { aplicaciones } = repartirCheque(Number(cheque.importe), pendientes, entregaPrimeroId);
+    const mov = await addMov({
+      fecha: cheque.fecha_emision || hoyISO(),
+      descripcion: `Pago a ${proveedor} — cheque N° ${cheque.n_cheque || "s/n"}`,
+      categoria: "Pago a Proveedor",
+      ingreso: null,
+      egreso: Number(cheque.importe),
+      proveedor,
+      medio_pago: "Cheque",
+      n_cheque_pago: cheque.n_cheque,
+      fecha_cobro_cheque_pago: cheque.fecha_cobro,
+      gasto_fijo_id: null,
+      cheque_id: cheque.id,
+    });
+    if (!mov) return ultimoErrorMov.current || "No se pudo guardar el pago. Probá de nuevo.";
+    if (aplicaciones.length > 0) {
+      await imputarPago(aplicaciones.map((a) => ({ movimiento_id: mov.id, entrega_id: a.entrega_id, monto: a.monto })));
+    }
+    return null;
   }
 
   async function addMov(nuevo: NuevoMovimiento) {
     const esCheque = nuevo.medio_pago === "Cheque" && !!nuevo.egreso;
+    // Con un cheque ya cargado no se crea otro (R4, R7). cheque_id sólo viaja cuando hay uno, así
+    // los pagos comunes siguen andando aunque la migración 037 no esté aplicada (R10).
+    const { cheque_id, ...resto } = nuevo;
     const { data, error } = await supabase
       .from("movimientos")
       .insert({
-        ...nuevo,
+        ...resto,
+        ...(cheque_id ? { cheque_id } : {}),
         fecha_cobro_cheque_pago: nuevo.fecha_cobro_cheque_pago || null,
         cheque_creado: esCheque,
         creado_por: userId,
@@ -164,12 +242,18 @@ export default function IngresosEgresosShell({
       .single();
     if (error || !data) {
       console.error(error);
-      setSaveError("No se pudo guardar. Probá de nuevo.");
+      ultimoErrorMov.current =
+        cheque_id && error?.message?.includes("cheque_id")
+          ? "Para usar un cheque ya cargado falta aplicar la migración 037 en Supabase."
+          : cheque_id && error?.code === "23505"
+            ? "Ese cheque ya está usado en otro pago. Recargá la página."
+            : "No se pudo guardar. Probá de nuevo.";
+      setSaveError(ultimoErrorMov.current);
       return null;
     }
     setSaveError("");
     setMovs((prev) => [...prev, data as Movimiento]);
-    if (esCheque) await crearChequeDesdeMovimiento(data as Movimiento);
+    if (esCheque && !cheque_id) await crearChequeDesdeMovimiento(data as Movimiento);
     return data as Movimiento;
   }
 
@@ -658,6 +742,7 @@ export default function IngresosEgresosShell({
           proveedores={proveedores}
           limites={limites}
           onAdd={addMov}
+          chequesLibres={chequesLibres}
           onUpdate={updateMov}
           onDelete={deleteMov}
           onRestaurarBackup={restaurarBackupMovs}
@@ -698,6 +783,8 @@ export default function IngresosEgresosShell({
           onAddEntrega={addEntrega}
           onDeleteEntrega={eliminarEntrega}
           onPagarEntrega={pagarEntrega}
+          chequesLibres={chequesLibres}
+          onAplicarCheque={aplicarCheque}
           onImputar={imputarPago}
           onDesimputar={desimputarPago}
           onSetCorte={setCorteCuentaCorriente}
@@ -717,6 +804,24 @@ export default function IngresosEgresosShell({
         />
       )}
       {tab === "historial" && <HistorialTab movs={movs} />}
+
+      {chequeAAplicar && (
+        <AplicarChequeModal
+          cheque={cheques.find((c) => c.id === chequeAAplicar) ?? null}
+          yaUsado={
+            chequesLibres.some((c) => c.id === chequeAAplicar)
+              ? null
+              : (movs.find((m) => m.cheque_id === chequeAAplicar) ?? ({ id: "", fecha: "", descripcion: "" } as Movimiento))
+          }
+          movs={movs}
+          entregas={entregas}
+          imputaciones={imputaciones}
+          corte={corte}
+          nombresProveedores={nombresProveedores}
+          onAplicar={(cheque, proveedor) => aplicarCheque(cheque, proveedor)}
+          onCerrar={() => setChequeAAplicar(null)}
+        />
+      )}
 
       <ConfirmModal />
     </div>

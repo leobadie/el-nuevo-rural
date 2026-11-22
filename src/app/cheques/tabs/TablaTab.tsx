@@ -12,6 +12,8 @@ import {
 } from "@/lib/cheques/calculos";
 import { ESTADO_STYLES, NAVY, PIE_COLORS, inputStyle, thStyle, tdStyle } from "@/lib/cheques/estilos";
 import type { Cheque, ChequeEnriquecido, EstadoCheque, NuevoCheque, SortConfig } from "@/lib/cheques/types";
+import Link from "next/link";
+import { posiblesRepetidos, puedeAplicarseADeuda, type PagoVinculado } from "@/lib/cheques/vinculo";
 
 const emptyForm: NuevoCheque = {
   n_cheque: "",
@@ -82,7 +84,11 @@ export default function TablaTab({
   onDelete,
   onDuplicate,
   onRestaurarBackup,
+  pagosVinculados = [],
+  corteRegistros = null,
 }: {
+  pagosVinculados?: PagoVinculado[];
+  corteRegistros?: string | null;
   cheques: Cheque[];
   enriched: ChequeEnriquecido[];
   esAdmin: boolean;
@@ -114,6 +120,11 @@ export default function TablaTab({
       duplicados: new Set(enriched.filter((c) => c.dup).map((c) => (c.n_cheque || "").toLowerCase())).size,
     };
   }, [enriched]);
+
+  // SPEC-cheque-a-proveedor.md: a qué pago corresponde cada cheque (R6) y posibles repetidos (R9).
+  const pagoPorCheque = useMemo(() => new Map(pagosVinculados.map((p) => [p.cheque_id, p])), [pagosVinculados]);
+  const usados = useMemo(() => new Set(pagoPorCheque.keys()), [pagoPorCheque]);
+  const repetidos = useMemo(() => posiblesRepetidos(cheques), [cheques]);
 
   const weeklyFlow = useMemo(() => buildWeeklyFlow(enriched), [enriched]);
   const providerConcentration = useMemo(() => buildProviderConcentration(enriched), [enriched]);
@@ -430,6 +441,35 @@ export default function TablaTab({
         </div>
       )}
 
+      {repetidos.length > 0 && (
+        <div style={{ background: "#FDEBD0", color: "#784212", border: "1px solid #78421233", borderRadius: 8, padding: "10px 12px", marginBottom: 12, fontSize: 12 }} data-test="aviso-repetidos">
+          <div style={{ fontWeight: 800, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+            <AlertTriangle size={14} /> {repetidos.length === 1 ? "Un cheque parece repetido" : `${repetidos.length} cheques parecen repetidos`}
+          </div>
+          <div style={{ marginBottom: 6 }}>
+            Uno se creó solo al cargar un pago con cheque y el otro lo cargaste a mano: mismo importe,
+            proveedor parecido y fechas cercanas. Revisalos y borrá el que sobra. No se borra nada solo.
+          </div>
+          {repetidos.map(({ generado, otro }) => (
+            <div key={generado.id + otro.id} style={{ display: "grid", gap: 4, background: "white", borderRadius: 6, padding: "6px 8px", marginTop: 6 }} data-test="par-repetido">
+              {[otro, generado].map((c) => (
+                <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span>
+                    <strong>N° {c.n_cheque || "s/n"}</strong> · {c.proveedor} · {fmtMoney(c.importe)} · emitido {fmtDate(c.fecha_emision)}
+                    <span style={{ color: "#888" }}>{c.id === generado.id ? " — creado desde un pago" : " — cargado a mano"}</span>
+                  </span>
+                  {esAdmin && (
+                    <button onClick={() => onDelete(c.id)} style={{ border: "1px solid #C0392B", background: "white", color: "#C0392B", borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }} data-test="borrar-repetido">
+                      Eliminar este
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={{ overflowX: "auto", border: "1px solid #ddd", borderRadius: 8 }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
@@ -500,7 +540,26 @@ export default function TablaTab({
                     {c.n_cheque || "-"}
                     {c.dup && <span style={{ marginLeft: 6, background: "#C0392B", color: "white", fontSize: 9, padding: "1px 5px", borderRadius: 4 }}>DUP</span>}
                   </td>
-                  <td style={tdStyle}>{c.proveedor}</td>
+                  <td style={tdStyle}>
+                    {c.proveedor}
+                    {pagoPorCheque.has(c.id) ? (
+                      <div style={{ fontSize: 10, color: "#145A32", fontWeight: 700, marginTop: 2 }} data-test="cheque-pago-vinculado">
+                        ✓ Pago a {pagoPorCheque.get(c.id)!.proveedor}
+                      </div>
+                    ) : (
+                      puedeAplicarseADeuda(c, usados, corteRegistros) && (
+                        <div style={{ marginTop: 2 }}>
+                          <Link
+                            href={`/ingresos-egresos?tab=cuentaproveedores&cheque=${c.id}`}
+                            style={{ fontSize: 10, fontWeight: 700, color: "#C0392B", textDecoration: "underline" }}
+                            data-test="cheque-aplicar-deuda"
+                          >
+                            Aplicar a deuda
+                          </Link>
+                        </div>
+                      )
+                    )}
+                  </td>
                   <td style={tdStyle}>
                     <span style={{ background: c.tipo === "E-cheque" ? "#E6F1FB" : "#F1EFE8", color: c.tipo === "E-cheque" ? "#0C447C" : "#444441", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 8 }}>
                       {c.tipo === "E-cheque" ? "E-cheque" : "Físico"}

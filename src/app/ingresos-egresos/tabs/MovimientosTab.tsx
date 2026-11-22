@@ -13,6 +13,8 @@ import type {
   SortConfigIE,
 } from "@/lib/ingresos-egresos/types";
 import { hoyISO } from "@/lib/fechas";
+import { ElegirCheque } from "../ChequeExistente";
+import type { ChequeBasico } from "@/lib/cheques/vinculo";
 
 const OTRO = "Otro";
 
@@ -66,7 +68,10 @@ export default function MovimientosTab({
   onRenameProveedor,
   onDeleteProveedor,
   onSetTelefonoProveedor,
+  chequesLibres = [],
 }: {
+  /** Cheques de Control de Cheques sin usar, para pagar con uno ya cargado (SPEC-cheque-a-proveedor.md R7). */
+  chequesLibres?: ChequeBasico[];
   movs: Movimiento[];
   enriched: MovimientoEnriquecido[];
   esAdmin: boolean;
@@ -86,6 +91,7 @@ export default function MovimientosTab({
 }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<NuevoMovimiento>(emptyForm);
+  const [chequeYaCargado, setChequeYaCargado] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Movimiento | null>(null);
   const [search, setSearch] = useState("");
@@ -162,9 +168,14 @@ export default function MovimientosTab({
       window.alert("Completá al menos la fecha y un monto (ingreso o egreso).");
       return;
     }
+    if (form.medio_pago === "Cheque" && chequeYaCargado && !form.cheque_id) {
+      window.alert("Elegí cuál de los cheques ya cargados usaste, o marcá \"Cheque nuevo\".");
+      return;
+    }
     const nuevo = await onAdd(form);
     if (nuevo) {
       setForm(emptyForm);
+      setChequeYaCargado(false);
       setShowForm(false);
     }
   }
@@ -421,7 +432,15 @@ export default function MovimientosTab({
             </div>
             <div>
               <label style={{ fontSize: 11, fontWeight: 700 }}>Monto Egreso</label>
-              <input type="number" style={inputStyle} value={form.egreso ?? ""} onChange={(e) => setForm({ ...form, egreso: parseFloat(e.target.value) || null })} />
+              <input
+                type="number"
+                style={{ ...inputStyle, ...(form.cheque_id ? { background: "#F0F0F0" } : {}) }}
+                value={form.egreso ?? ""}
+                readOnly={!!form.cheque_id}
+                title={form.cheque_id ? "Es el importe del cheque elegido" : undefined}
+                onChange={(e) => setForm({ ...form, egreso: parseFloat(e.target.value) || null })}
+                data-test="mov-egreso"
+              />
             </div>
             <div>
               <label style={{ fontSize: 11, fontWeight: 700 }}>Proveedor</label>
@@ -435,14 +454,19 @@ export default function MovimientosTab({
             {mostrarMedioPago && (
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700 }}>Medio de pago</label>
-                <select style={inputStyle} value={form.medio_pago ?? "Efectivo"} onChange={(e) => setForm({ ...form, medio_pago: e.target.value as NuevoMovimiento["medio_pago"] })}>
+                <select
+                  style={inputStyle}
+                  value={form.medio_pago ?? "Efectivo"}
+                  onChange={(e) => setForm({ ...form, medio_pago: e.target.value as NuevoMovimiento["medio_pago"], cheque_id: null })}
+                  data-test="mov-medio"
+                >
                   <option>Efectivo</option>
                   <option>Transferencia</option>
                   {esAdmin && <option>Cheque</option>}
                 </select>
               </div>
             )}
-            {mostrarChequeCampos && (
+            {mostrarChequeCampos && !chequeYaCargado && (
               <>
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700 }}>N° de Cheque</label>
@@ -456,8 +480,46 @@ export default function MovimientosTab({
             )}
           </div>
           {mostrarChequeCampos && (
-            <div style={{ background: "#E6F1FB", color: "#0C447C", padding: "8px 12px", borderRadius: 6, marginTop: 10, fontSize: 12 }}>
-              Este pago no va a contar en la caja de hoy y se va a crear automáticamente un cheque en Control de Cheques.
+            <div style={{ marginTop: 10, display: "grid", gap: 8 }} data-test="mov-cheque">
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, fontWeight: 700 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    checked={!chequeYaCargado}
+                    onChange={() => {
+                      setChequeYaCargado(false);
+                      setForm({ ...form, cheque_id: null });
+                    }}
+                    data-test="mov-cheque-nuevo"
+                  />
+                  Cheque nuevo
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <input type="radio" checked={chequeYaCargado} onChange={() => setChequeYaCargado(true)} data-test="mov-cheque-existente" />
+                  Ya está en Control de Cheques
+                </label>
+              </div>
+              {chequeYaCargado && (
+                <ElegirCheque
+                  cheques={chequesLibres}
+                  proveedor={form.proveedor}
+                  elegidoId={form.cheque_id ?? null}
+                  onElegir={(c) =>
+                    setForm({
+                      ...form,
+                      cheque_id: c.id,
+                      egreso: Number(c.importe),
+                      n_cheque_pago: c.n_cheque,
+                      fecha_cobro_cheque_pago: c.fecha_cobro,
+                    })
+                  }
+                />
+              )}
+              <div style={{ background: "#E6F1FB", color: "#0C447C", padding: "8px 12px", borderRadius: 6, fontSize: 12 }} data-test="mov-cheque-aviso">
+                {chequeYaCargado
+                  ? "Este pago no va a contar en la caja de hoy. Se vincula al cheque elegido y no se crea otro."
+                  : "Este pago no va a contar en la caja de hoy y se va a crear automáticamente un cheque en Control de Cheques."}
+              </div>
             </div>
           )}
           <button onClick={addMov} style={{ marginTop: 12, background: RED, color: "white", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>

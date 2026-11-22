@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { aplicarCorte, corteCuentaCorriente } from "@/lib/ingresos-egresos/corte";
 import { leerCorteIE } from "@/lib/ingresos-egresos/corteServidor";
 import { traerTodo } from "@/lib/supabase/traerTodo";
+import { idsChequesUsados, type ChequeBasico } from "@/lib/cheques/vinculo";
 import IngresosEgresosShell from "./IngresosEgresosShell";
 import type {
   Categoria,
@@ -20,9 +21,9 @@ import type {
 export default async function IngresosEgresosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; cheque?: string }>;
 }) {
-  const { tab } = await searchParams;
+  const { tab, cheque } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -49,6 +50,7 @@ export default async function IngresosEgresosPage({
     entregasRes,
     imputacionesRes,
     configProveedoresRes,
+    chequesRes,
   ] = await Promise.all([
     traerTodo<Movimiento>((desde, hasta, conTotal) =>
       supabase
@@ -67,6 +69,17 @@ export default async function IngresosEgresosPage({
     supabase.from("entregas_proveedor").select("*").order("fecha", { ascending: true }),
     supabase.from("imputaciones_pago").select("*").order("creado_el", { ascending: true }),
     supabase.from("config_proveedores").select("*").maybeSingle(),
+    // Para pagar con un cheque ya cargado (SPEC-cheque-a-proveedor.md).
+    traerTodo<ChequeBasico>((desde, hasta, conTotal) =>
+      supabase
+        .from("cheques")
+        .select("id, n_cheque, proveedor, fecha_emision, fecha_cobro, importe, rechazado, observaciones, creado_el", {
+          count: conTotal ? "exact" : undefined,
+        })
+        .order("creado_el", { ascending: true })
+        .order("id", { ascending: true })
+        .range(desde, hasta),
+    ),
   ]);
 
   // Corte de registros (SPEC-corte-registros.md): lo cargado antes sigue en la base, pero la
@@ -82,6 +95,12 @@ export default async function IngresosEgresosPage({
     },
     corte,
   );
+  // Un cheque usado por un pago de antes del corte sigue usado: si no, volvería a ofrecerse.
+  // Los de después los calcula la pantalla con los movimientos que tiene en memoria.
+  const idsVisibles = new Set(visibles.movimientos.map((m) => m.id));
+  const chequesUsados = [
+    ...idsChequesUsados(((movsRes.data ?? []) as Movimiento[]).filter((m) => !idsVisibles.has(m.id))),
+  ];
   // La cuenta corriente tiene su propio corte (013); manda el más nuevo de los dos.
   const configProveedores = configProveedoresRes.data as ConfigProveedores | null;
   const configProveedoresEfectiva: ConfigProveedores | null =
@@ -106,6 +125,9 @@ export default async function IngresosEgresosPage({
       configProveedoresInicial={configProveedoresEfectiva}
       corteRegistros={corte}
       guardadosAntesDelCorte={guardados}
+      chequesIniciales={chequesRes.data}
+      chequesUsadosAntes={chequesUsados}
+      chequeParaAplicar={cheque ?? null}
     />
   );
 }

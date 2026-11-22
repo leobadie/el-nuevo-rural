@@ -16,6 +16,7 @@ import AntiguedadTab from "./tabs/AntiguedadTab";
 import ConciliacionTab from "./tabs/ConciliacionTab";
 import TercerosTab from "./tabs/TercerosTab";
 import HistorialTab from "./tabs/HistorialTab";
+import type { PagoVinculado } from "@/lib/cheques/vinculo";
 import type {
   Cheque,
   ChequeEnriquecido,
@@ -60,7 +61,13 @@ export default function ChequesShell({
   chequesIniciales,
   tercerosIniciales,
   limitesIniciales,
+  pagosVinculados = [],
+  corteRegistros = null,
 }: {
+  /** Pagos de Ingresos y Egresos vinculados a un cheque (SPEC-cheque-a-proveedor.md). */
+  pagosVinculados?: PagoVinculado[];
+  /** Corte de registros de Ingresos y Egresos: sólo los cheques desde ahí ofrecen "Aplicar a deuda". */
+  corteRegistros?: string | null;
   esAdmin: boolean;
   userId: string;
   chequesIniciales: Cheque[];
@@ -346,6 +353,8 @@ export default function ChequesShell({
           onDelete={deleteCheque}
           onDuplicate={duplicarCheque}
           onRestaurarBackup={restaurarBackup}
+          pagosVinculados={pagosVinculados}
+          corteRegistros={corteRegistros}
         />
       )}
       {tab === "proveedores" && (

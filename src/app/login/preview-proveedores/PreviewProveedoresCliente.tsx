@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import CuentaProveedoresTab from "@/app/ingresos-egresos/tabs/CuentaProveedoresTab";
+import { AplicarChequeModal } from "@/app/ingresos-egresos/ChequeExistente";
+import { chequesSinUsar, repartirCheque, type ChequeBasico } from "@/lib/cheques/vinculo";
+import { entregasConSaldo } from "@/lib/ingresos-egresos/cuentaProveedores";
 import type {
   EntregaProveedor,
   ImputacionPago,
@@ -78,6 +81,18 @@ const IMPUTACIONES_INICIALES: ImputacionPago[] = [
   { id: "i2", movimiento_id: "m3", entrega_id: "e4", monto: 8000, creado_el: d(-2) },
 ];
 
+/**
+ * Cheques de Control de Cheques (SPEC-cheque-a-proveedor.md). Los nombres no coinciden con los de
+ * Proveedores a propósito, como pasa en la base real ("italiana santander" vs "Italiana").
+ */
+const CHEQUES_INICIALES: ChequeBasico[] = [
+  { id: "c1", n_cheque: "726", proveedor: "italiana santander", fecha_emision: d(-1), fecha_cobro: d(40), importe: 120000, rechazado: false, observaciones: null, creado_el: d(-1) },
+  { id: "c2", n_cheque: "727", proveedor: "PEPSI", fecha_emision: d(-1), fecha_cobro: d(30), importe: 45000, rechazado: false, observaciones: null, creado_el: d(-1) },
+  { id: "c3", n_cheque: "700", proveedor: "Italiana", fecha_emision: d(-20), fecha_cobro: d(10), importe: 99000, rechazado: true, observaciones: "ORDEN DE NO PAGAR", creado_el: d(-20) },
+  { id: "c4", n_cheque: "650", proveedor: "Miga", fecha_emision: d(-15), fecha_cobro: d(5), importe: 15000, rechazado: false, observaciones: null, creado_el: d(-15) },
+  { id: "c5", n_cheque: "800", proveedor: "SANTA RITA", fecha_emision: d(-2), fecha_cobro: d(60), importe: 300000, rechazado: false, observaciones: null, creado_el: d(-2) },
+];
+
 let seq = 100;
 const nextId = () => `x${(seq += 1)}`;
 
@@ -91,6 +106,28 @@ export default function PreviewProveedoresCliente() {
   const [entregas, setEntregas] = useState<EntregaProveedor[]>(ENTREGAS_INICIALES);
   const [imputaciones, setImputaciones] = useState<ImputacionPago[]>(IMPUTACIONES_INICIALES);
   const [corte, setCorte] = useState<string | null>(CORTE);
+  const [cheques, setCheques] = useState<ChequeBasico[]>(CHEQUES_INICIALES);
+  // El cheque 650 de Miga ya se usó en un pago: no se tiene que ofrecer.
+  const [movsConCheque] = useState([{ id: "m-viejo", cheque_id: "c4", proveedor: "Miga", descripcion: "Pago Miga", fecha: d(-15) }]);
+  const chequesLibres = chequesSinUsar(cheques, [...movs, ...movsConCheque]);
+  const [chequeAAplicar, setChequeAAplicar] = useState<string | null>(null);
+
+  /** Réplica de aplicarCheque del Shell: un egreso vinculado al cheque, sin crear otro, y su reparto. */
+  async function aplicarCheque(cheque: ChequeBasico, proveedor: string, entregaPrimeroId?: string | null) {
+    if (!chequesLibres.some((c) => c.id === cheque.id)) return "Ese cheque ya está usado en otro pago.";
+    const pendientes = entregasConSaldo(entregas, imputaciones, proveedor).filter((e) => e.saldo > 0);
+    const { aplicaciones } = repartirCheque(Number(cheque.importe), pendientes, entregaPrimeroId);
+    const id = nextId();
+    setMovs((prev) => [
+      ...prev,
+      { ...mov(id, proveedor, cheque.fecha_emision || d(0), Number(cheque.importe), `Pago a ${proveedor} — cheque N° ${cheque.n_cheque}`, "Cheque"), cheque_id: cheque.id, cheque_creado: true },
+    ]);
+    setImputaciones((prev) => [
+      ...prev,
+      ...aplicaciones.map((a) => ({ ...a, movimiento_id: id, id: nextId(), creado_el: new Date().toISOString() })),
+    ]);
+    return null;
+  }
 
   async function addEntrega(nueva: NuevaEntregaProveedor) {
     setEntregas((prev) => [...prev, { ...nueva, id: nextId(), creado_el: new Date().toISOString(), creado_por: null }]);
@@ -128,6 +165,13 @@ export default function PreviewProveedoresCliente() {
   }) {
     const id = nextId();
     setMovs((prev) => [...prev, mov(id, datos.proveedor, datos.fecha, datos.monto, datos.descripcion, datos.medioPago)]);
+    // Como en el Shell: pagar con "Cheque" en un pago nuevo crea un cheque en Control de Cheques.
+    if (datos.medioPago === "Cheque") {
+      setCheques((prev) => [
+        ...prev,
+        { id: nextId(), n_cheque: null, proveedor: datos.proveedor, fecha_emision: datos.fecha, fecha_cobro: null, importe: datos.monto, rechazado: false, observaciones: `Generado desde Ingresos y Egresos: ${datos.descripcion}`, creado_el: new Date().toISOString() },
+      ]);
+    }
     setImputaciones((prev) => [
       ...prev,
       { id: nextId(), movimiento_id: id, entrega_id: datos.entregaId, monto: datos.monto, creado_el: new Date().toISOString() },
@@ -149,8 +193,40 @@ export default function PreviewProveedoresCliente() {
       */}
       <p style={{ fontSize: 12, color: "#666", marginBottom: 20, background: "#F8F9FA", borderRadius: 6, padding: "8px 10px" }}>
         Movimientos: <strong data-test="preview-cant-movs">{movs.length}</strong> ·
-        {" "}total de egresos <strong data-test="preview-total-egresos">{movs.reduce((a, m) => a + (Number(m.egreso) || 0), 0)}</strong>
+        {" "}total de egresos <strong data-test="preview-total-egresos">{movs.reduce((a, m) => a + (Number(m.egreso) || 0), 0)}</strong> ·
+        {" "}cheques en Control de Cheques <strong data-test="preview-cant-cheques">{cheques.length}</strong> ·
+        {" "}sin usar <strong data-test="preview-cheques-libres">{chequesLibres.length}</strong>
       </p>
+      {/* Espejo del botón "Aplicar a deuda" de Control de Cheques, que lleva a este modal. */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        {cheques.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => setChequeAAplicar(c.id)}
+            style={{ border: "1px solid #ddd", background: "white", borderRadius: 6, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}
+            data-test={`preview-aplicar-${c.n_cheque ?? c.id}`}
+          >
+            Aplicar a deuda: N° {c.n_cheque ?? "s/n"}
+          </button>
+        ))}
+      </div>
+      {chequeAAplicar && (
+        <AplicarChequeModal
+          cheque={cheques.find((c) => c.id === chequeAAplicar) ?? null}
+          yaUsado={
+            chequesLibres.some((c) => c.id === chequeAAplicar)
+              ? null
+              : (movs.find((m) => m.cheque_id === chequeAAplicar) ?? ({ id: "", fecha: "", descripcion: "" } as Movimiento))
+          }
+          movs={movs}
+          entregas={entregas}
+          imputaciones={imputaciones}
+          corte={corte}
+          nombresProveedores={proveedores.map((p) => p.nombre)}
+          onAplicar={(c, p) => aplicarCheque(c, p)}
+          onCerrar={() => setChequeAAplicar(null)}
+        />
+      )}
       <CuentaProveedoresTab
         movs={movs}
         entregas={entregas}
@@ -161,6 +237,8 @@ export default function PreviewProveedoresCliente() {
         onAddEntrega={addEntrega}
         onDeleteEntrega={eliminarEntrega}
         onPagarEntrega={pagarEntrega}
+        chequesLibres={chequesLibres}
+        onAplicarCheque={aplicarCheque}
         onImputar={imputar}
         onDesimputar={desimputar}
         onSetCorte={async (nuevo) => setCorte(nuevo)}

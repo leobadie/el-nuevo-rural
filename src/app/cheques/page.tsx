@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import ChequesShell from "./ChequesShell";
 import type { Cheque, ChequeTercero, LimiteProveedor } from "@/lib/cheques/types";
 import { traerTodo } from "@/lib/supabase/traerTodo";
+import { leerCorteIE } from "@/lib/ingresos-egresos/corteServidor";
+import type { PagoVinculado } from "@/lib/cheques/vinculo";
 
 export default async function ChequesPage() {
   const supabase = await createClient();
@@ -33,7 +35,7 @@ export default async function ChequesPage() {
     );
   }
 
-  const [chequesRes, tercerosRes, limitesRes] = await Promise.all([
+  const [chequesRes, tercerosRes, limitesRes, vinculadosRes, corte] = await Promise.all([
     traerTodo<Cheque>((desde, hasta, conTotal) =>
       supabase
         .from("cheques")
@@ -44,6 +46,17 @@ export default async function ChequesPage() {
     ),
     supabase.from("cheques_terceros").select("*").order("creado_el", { ascending: true }),
     supabase.from("limites_proveedores_cheques").select("*"),
+    // Qué pago usó cada cheque (SPEC-cheque-a-proveedor.md R6). Sin la migración 037 falla y
+    // queda vacío: la tabla se ve como antes.
+    traerTodo<PagoVinculado>((desde, hasta, conTotal) =>
+      supabase
+        .from("movimientos")
+        .select("id, cheque_id, proveedor, descripcion, fecha", { count: conTotal ? "exact" : undefined })
+        .not("cheque_id", "is", null)
+        .order("id", { ascending: true })
+        .range(desde, hasta),
+    ),
+    leerCorteIE(supabase),
   ]);
 
   return (
@@ -53,6 +66,8 @@ export default async function ChequesPage() {
       chequesIniciales={(chequesRes.data ?? []) as Cheque[]}
       tercerosIniciales={(tercerosRes.data ?? []) as ChequeTercero[]}
       limitesIniciales={(limitesRes.data ?? []) as LimiteProveedor[]}
+      pagosVinculados={vinculadosRes.error ? [] : vinculadosRes.data}
+      corteRegistros={corte}
     />
   );
 }
