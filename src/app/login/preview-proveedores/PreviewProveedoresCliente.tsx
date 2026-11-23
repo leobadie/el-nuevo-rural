@@ -231,6 +231,23 @@ export default function PreviewProveedoresCliente() {
     ]);
   }
 
+  /** Réplica de pagarConTransferencia del Shell: un egreso con medio Transferencia y sus aplicaciones. */
+  async function pagarTransferencia(datos: {
+    proveedor: string;
+    fecha: string;
+    monto: number;
+    descripcion: string;
+    aplicaciones: { entrega_id: string; monto: number }[];
+  }) {
+    const id = nextId();
+    setMovs((prev) => [...prev, mov(id, datos.proveedor, datos.fecha, datos.monto, datos.descripcion, "Transferencia")]);
+    setImputaciones((prev) => [
+      ...prev,
+      ...datos.aplicaciones.map((a) => ({ ...a, movimiento_id: id, id: nextId(), creado_el: new Date().toISOString() })),
+    ]);
+    return { error: null, guardado: true };
+  }
+
   return (
     // minWidth: 0 por lo mismo que en IngresosEgresosShell: el body es flex y sin esto
     // el ancho de la tabla estira el documento entero en móvil.
@@ -249,7 +266,10 @@ export default function PreviewProveedoresCliente() {
         {" "}total de egresos <strong data-test="preview-total-egresos">{movs.reduce((a, m) => a + (Number(m.egreso) || 0), 0)}</strong> ·
         {" "}cheques en Control de Cheques <strong data-test="preview-cant-cheques">{cheques.length}</strong> ·
         {" "}sin usar <strong data-test="preview-cheques-libres">{chequesLibres.length}</strong> ·
-        {" "}notas de crédito <strong data-test="preview-cant-notas">{notas.length}</strong>
+        {" "}notas de crédito <strong data-test="preview-cant-notas">{notas.length}</strong> ·
+        {" "}último egreso <strong data-test="preview-ultimo-mov">
+          {movs.length > 0 ? `${movs[movs.length - 1].medio_pago} ${movs[movs.length - 1].egreso} ${movs[movs.length - 1].descripcion}` : "—"}
+        </strong>
       </p>
       {/* Espejo del botón "Aplicar a deuda" de Control de Cheques, que lleva a este modal. */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
@@ -302,6 +322,7 @@ export default function PreviewProveedoresCliente() {
         onAddEntrega={addEntrega}
         onDeleteEntrega={eliminarEntrega}
         onPagarEntrega={pagarEntrega}
+        onPagarTransferencia={pagarTransferencia}
         chequesLibres={chequesLibres}
         onAplicarCheque={aplicarCheque}
         onImputar={imputar}

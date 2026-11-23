@@ -46,6 +46,8 @@
     "verificar:notas-credito-calculos": "node verificacion/notas-credito-calculos.mts",
     "verificar:notas-credito": "node verificacion/notas-credito.mjs",
     "verificar:base-notas-credito": "node verificacion/base-notas-credito.mts",
+    "verificar:transferencia-calculos": "node verificacion/transferencia-calculos.mts",
+    "verificar:transferencia": "node verificacion/transferencia.mjs",
     "verificar:descuento-calculos": "node verificacion/descuento-calculos.mts",
     "verificar:descuento": "node verificacion/descuento.mjs",
     "verificar:base-descuento": "node verificacion/base-descuento.mts",

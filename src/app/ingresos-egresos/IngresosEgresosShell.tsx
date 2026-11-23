@@ -485,6 +485,54 @@ export default function IngresosEgresosShell({
     await imputarPago([{ movimiento_id: mov.id, entrega_id: entregaId, monto }]);
   }
 
+  /**
+   * Una transferencia que paga varias boletas (SPEC-transferencia-proveedor.md, 6 y 8): un solo
+   * egreso y después sus aplicaciones. Si una aplicación falla, el egreso queda y lo que no se
+   * aplicó queda a cuenta. Devuelve el error para mostrar, o null.
+   */
+  async function pagarConTransferencia({
+    proveedor,
+    fecha,
+    monto,
+    descripcion,
+    aplicaciones,
+  }: {
+    proveedor: string;
+    fecha: string;
+    monto: number;
+    descripcion: string;
+    aplicaciones: { entrega_id: string; monto: number }[];
+  }): Promise<{ error: string | null; guardado: boolean }> {
+    const mov = await addMov({
+      fecha,
+      descripcion,
+      categoria: "Pago a Proveedor",
+      ingreso: null,
+      egreso: monto,
+      proveedor,
+      medio_pago: "Transferencia",
+      n_cheque_pago: null,
+      fecha_cobro_cheque_pago: null,
+      gasto_fijo_id: null,
+    });
+    if (!mov) return { error: ultimoErrorMov.current || "No se pudo guardar la transferencia. Probá de nuevo.", guardado: false };
+    if (aplicaciones.length === 0) return { error: null, guardado: true };
+    const { data, error } = await supabase
+      .from("imputaciones_pago")
+      .insert(aplicaciones.map((a) => ({ movimiento_id: mov.id, entrega_id: a.entrega_id, monto: a.monto })))
+      .select();
+    if (error || !data) {
+      console.error(error);
+      const msg =
+        "La transferencia se guardó en Movimientos, pero no se pudo aplicar a las boletas: quedó a cuenta. " +
+        "Recargá la página y usá \"Aplicar a las entregas pendientes\".";
+      setSaveError(msg);
+      return { error: msg, guardado: true };
+    }
+    setImputaciones((prev) => [...prev, ...(data as ImputacionPago[])]);
+    return { error: null, guardado: true };
+  }
+
   async function restaurarBackupMovs(nuevosMovs: unknown[], nuevosLimites: Record<string, number>) {
     const ejecutar = async () => {
       const { error: delErr } = await supabase.from("movimientos").delete().not("id", "is", null);
@@ -870,6 +918,7 @@ export default function IngresosEgresosShell({
           onAddEntrega={addEntrega}
           onDeleteEntrega={eliminarEntrega}
           onPagarEntrega={pagarEntrega}
+          onPagarTransferencia={pagarConTransferencia}
           chequesLibres={chequesLibres}
           onAplicarCheque={aplicarCheque}
           onImputar={imputarPago}

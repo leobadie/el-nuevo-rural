@@ -292,3 +292,20 @@ export function repartirTodoConNotasFIFO(
   }
   return salida;
 }
+
+/**
+ * Reparto de una transferencia que paga varias boletas (SPEC-transferencia-proveedor.md, 4): sin
+ * boletas elegidas va contra todas las pendientes; con elegidas, sólo contra ésas. Siempre de la más
+ * vieja a la más nueva, y lo que no entra queda a cuenta. `pendientes` viene de entregasConSaldo
+ * (ya ordenada y con las notas de crédito descontadas).
+ */
+export function repartirTransferencia(
+  importe: number,
+  pendientes: EntregaConSaldo[],
+  elegidas: string[],
+): { aplicaciones: { entrega_id: string; monto: number }[]; aCuenta: number } {
+  const destino = elegidas.length > 0 ? pendientes.filter((e) => elegidas.includes(e.id)) : pendientes;
+  const aplicaciones = repartirFIFO(importe, destino);
+  const aplicadoC = aplicaciones.reduce((t, a) => t + centavos(a.monto), 0);
+  return { aplicaciones, aCuenta: pesos(Math.max(centavos(importe) - aplicadoC, 0)) };
+}

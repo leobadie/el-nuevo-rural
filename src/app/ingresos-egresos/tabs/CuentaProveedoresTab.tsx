@@ -13,6 +13,7 @@ import {
   partirNota,
   repartirFIFO,
   repartirTodoConNotasFIFO,
+  repartirTransferencia,
 } from "@/lib/ingresos-egresos/cuentaProveedores";
 import { fmtDateIE, fmtMoneyIE } from "@/lib/ingresos-egresos/calculos";
 import { RED, inputStyle, tdStyle, thStyle } from "@/lib/ingresos-egresos/estilos";
@@ -32,6 +33,19 @@ import type {
   PagoConSaldo,
   Proveedor,
 } from "@/lib/ingresos-egresos/types";
+
+/**
+ * Una transferencia que paga varias boletas (SPEC-transferencia-proveedor.md): un egreso y sus
+ * aplicaciones. `guardado` dice si el egreso quedó en Movimientos aunque haya error: en ese caso
+ * el modal se cierra igual, porque volver a confirmar cargaría la transferencia dos veces.
+ */
+export type PagarTransferencia = (datos: {
+  proveedor: string;
+  fecha: string;
+  monto: number;
+  descripcion: string;
+  aplicaciones: { entrega_id: string; monto: number }[];
+}) => Promise<{ error: string | null; guardado: boolean }>;
 
 /** Lo que el Shell expone para las notas de crédito (SPEC-notas-credito.md). */
 export interface PropsNotas {
@@ -87,6 +101,7 @@ export default function CuentaProveedoresTab({
   onAddEntrega,
   onDeleteEntrega,
   onPagarEntrega,
+  onPagarTransferencia,
   onAplicarCheque,
   chequesLibres,
   onImputar,
@@ -95,6 +110,7 @@ export default function CuentaProveedoresTab({
   onSetDescuentoProveedor,
   ...propsNotas
 }: PropsNotas & {
+  onPagarTransferencia: PagarTransferencia;
   movs: Movimiento[];
   entregas: EntregaProveedor[];
   imputaciones: ImputacionPago[];
@@ -146,6 +162,7 @@ export default function CuentaProveedoresTab({
         onAddEntrega={onAddEntrega}
         onDeleteEntrega={onDeleteEntrega}
         onPagarEntrega={onPagarEntrega}
+        onPagarTransferencia={onPagarTransferencia}
         onAplicarCheque={onAplicarCheque}
         chequesLibres={chequesLibres}
         onImputar={onImputar}
@@ -773,6 +790,7 @@ function FichaProveedor({
   onAddEntrega,
   onDeleteEntrega,
   onPagarEntrega,
+  onPagarTransferencia,
   onAplicarCheque,
   chequesLibres,
   onImputar,
@@ -786,6 +804,7 @@ function FichaProveedor({
   onDesaplicarNota,
   onDeleteNota,
 }: PropsNotas & {
+  onPagarTransferencia: PagarTransferencia;
   proveedor: string;
   /** La fila de la tabla proveedores (para el % de descuento). Puede faltar si sólo hay entregas. */
   datosProveedor?: Proveedor;
@@ -815,6 +834,7 @@ function FichaProveedor({
   const [pagando, setPagando] = useState<EntregaConSaldo | null>(null);
   const [aplicando, setAplicando] = useState<string | null>(null);
   const [aplicandoNota, setAplicandoNota] = useState<string | null>(null);
+  const [transfiriendo, setTransfiriendo] = useState(false);
 
   const lista = useMemo(
     () => entregasConSaldo(entregas, imputaciones, proveedor, aplicacionesNota),
@@ -919,7 +939,29 @@ function FichaProveedor({
           aplicacionesNota={aplicacionesNota}
           onAddNota={onAddNota}
         />
+        <button
+          onClick={() => setTransfiriendo(true)}
+          style={{ ...botonStyle, background: "#1F618D", color: "white", marginBottom: 16, display: "inline-flex", alignItems: "center", gap: 6 }}
+          data-test="abrir-transferencia"
+        >
+          <Plus size={14} /> Pagar con transferencia
+        </button>
       </div>
+
+      {transfiriendo && (
+        <PagarTransferenciaModal
+          proveedor={proveedor}
+          pendientes={pendientes}
+          aCuenta={aCuenta}
+          onCerrar={() => setTransfiriendo(false)}
+          onConfirmar={async (datos) => {
+            const r = await onPagarTransferencia({ ...datos, proveedor });
+            // Con el egreso guardado se cierra aunque haya error: el aviso queda arriba, en rojo.
+            if (r.guardado) setTransfiriendo(false);
+            return r.error;
+          }}
+        />
+      )}
 
       {aCuenta > 0 && pendientes.length > 0 && (
         <div
@@ -1247,6 +1289,207 @@ function FichaProveedor({
           }}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Una transferencia que paga varias boletas (SPEC-transferencia-proveedor.md). Sin boletas marcadas
+ * se reparte entre todas las pendientes; con marcadas, sólo entre ésas. Siempre de la más vieja a la
+ * más nueva, y lo que sobra queda a cuenta.
+ */
+function PagarTransferenciaModal({
+  proveedor,
+  pendientes,
+  aCuenta,
+  onCerrar,
+  onConfirmar,
+}: {
+  proveedor: string;
+  pendientes: EntregaConSaldo[];
+  /** Pagos y notas ya cargados sin aplicar: puede que la transferencia ya esté en Movimientos. */
+  aCuenta: number;
+  onCerrar: () => void;
+  onConfirmar: (datos: {
+    fecha: string;
+    monto: number;
+    descripcion: string;
+    aplicaciones: { entrega_id: string; monto: number }[];
+  }) => Promise<string | null>;
+}) {
+  const [fecha, setFecha] = useState(hoyISO);
+  const [monto, setMonto] = useState("");
+  const [operacion, setOperacion] = useState("");
+  const [elegidas, setElegidas] = useState<string[]>([]);
+  const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const importe = parseFloat(monto);
+  const reparto = importe > 0 ? repartirTransferencia(importe, pendientes, elegidas) : null;
+  const marcado = pendientes.filter((e) => elegidas.includes(e.id)).reduce((t, e) => t + e.saldo, 0);
+
+  function alternar(id: string) {
+    setElegidas((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function confirmar() {
+    setError("");
+    if (!(importe > 0)) {
+      setError("Poné el importe de la transferencia.");
+      return;
+    }
+    if (!fecha) {
+      setError("Poné la fecha de la transferencia.");
+      return;
+    }
+    const { aplicaciones } = repartirTransferencia(importe, pendientes, elegidas);
+    const comprobantes = aplicaciones
+      .map((a) => pendientes.find((e) => e.id === a.entrega_id)?.comprobante)
+      .filter(Boolean)
+      .join(", ");
+    const descripcion = [`Pago a ${proveedor}`, `transferencia${operacion.trim() ? ` N° ${operacion.trim()}` : ""}`, comprobantes]
+      .filter(Boolean)
+      .join(" — ");
+    setGuardando(true);
+    const err = await onConfirmar({ fecha, monto: importe, descripcion, aplicaciones });
+    setGuardando(false);
+    if (err) setError(err);
+  }
+
+  return (
+    <div
+      onClick={onCerrar}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 50 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "white", borderRadius: 10, padding: 20, width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box" }}
+        data-test="modal-transferencia"
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <strong style={{ fontSize: 16 }}>Pagar con transferencia</strong>
+          <button onClick={onCerrar} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#888" }}>
+            <X size={18} />
+          </button>
+        </div>
+        <p style={{ fontSize: 12, color: "#666", margin: "0 0 14px" }}>{proveedor}</p>
+
+        {aCuenta > 0 && (
+          <p
+            style={{ fontSize: 12, color: AMBAR_TX, background: AMBAR_BG, borderRadius: 6, padding: "8px 10px", margin: "0 0 14px" }}
+            data-test="aviso-transferencia-acuenta"
+          >
+            Este proveedor ya tiene <strong>{fmtMoneyIE(aCuenta)}</strong>{" "}a cuenta sin aplicar. Si esta
+            transferencia ya está cargada en Movimientos, no la cargues de nuevo: cerrá esto y usá
+            &quot;Aplicar a las entregas pendientes&quot;.
+          </p>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+            Fecha
+            <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} data-test="transf-fecha" />
+          </label>
+          <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+            Importe de la transferencia
+            <input
+              type="number"
+              inputMode="decimal"
+              value={monto}
+              onChange={(e) => {
+                setMonto(e.target.value);
+                setError("");
+              }}
+              placeholder="0"
+              style={inputStyle}
+              data-test="transf-monto"
+            />
+          </label>
+          <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+            N° de operación
+            <input value={operacion} onChange={(e) => setOperacion(e.target.value)} placeholder="opcional" style={inputStyle} data-test="transf-operacion" />
+          </label>
+        </div>
+
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#666", margin: "14px 0 6px" }}>
+          Boletas que paga{" "}
+          <span style={{ fontWeight: 400, color: "#888" }}>
+            (si no marcás ninguna, se reparte de la más vieja a la más nueva)
+          </span>
+        </div>
+        {pendientes.length === 0 ? (
+          <p style={{ fontSize: 12, color: "#888", margin: 0 }}>No tiene boletas pendientes: toda la transferencia queda a cuenta.</p>
+        ) : (
+          <div style={{ border: "1px solid #ddd", borderRadius: 8, maxHeight: 220, overflowY: "auto" }}>
+            {pendientes.map((e) => (
+              <label
+                key={e.id}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: "1px solid #eee", fontSize: 12, cursor: "pointer" }}
+                data-test="transf-boleta"
+              >
+                <input type="checkbox" checked={elegidas.includes(e.id)} onChange={() => alternar(e.id)} style={{ width: 16, height: 16, flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  {fmtDateIE(e.fecha)} · {e.comprobante || "sin comprobante"}
+                </span>
+                <strong style={{ whiteSpace: "nowrap" }}>{fmtMoneyIE(e.saldo)}</strong>
+              </label>
+            ))}
+          </div>
+        )}
+        {elegidas.length > 0 && (
+          <div style={{ fontSize: 12, color: "#555", marginTop: 6 }} data-test="transf-marcado">
+            Marcaste {elegidas.length === 1 ? "1 boleta" : `${elegidas.length} boletas`} por <strong>{fmtMoneyIE(marcado)}</strong>.
+          </div>
+        )}
+
+        {reparto && (
+          <div style={{ background: "#F8F9FA", borderRadius: 6, padding: "8px 10px", fontSize: 12, marginTop: 12 }} data-test="transf-reparto">
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Se aplica así:</div>
+            {reparto.aplicaciones.length === 0 && <div>No se aplica a ninguna boleta.</div>}
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {reparto.aplicaciones.map((a) => {
+                const e = pendientes.find((x) => x.id === a.entrega_id);
+                return (
+                  <li key={a.entrega_id} data-test="transf-linea">
+                    {fmtMoneyIE(a.monto)} → {e?.comprobante || `boleta del ${e ? fmtDateIE(e.fecha) : "?"}`}
+                    {e && a.monto < e.saldo ? ` — queda debiendo ${fmtMoneyIE(e.saldo - a.monto)}` : " — queda pagada"}
+                  </li>
+                );
+              })}
+            </ul>
+            {reparto.aCuenta > 0 && (
+              <div style={{ marginTop: 4, color: AMBAR_TX, fontWeight: 700 }} data-test="transf-a-cuenta">
+                Sobran {fmtMoneyIE(reparto.aCuenta)}: quedan a cuenta del proveedor.
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div style={{ color: ROJO_TX, fontSize: 12, marginTop: 10, fontWeight: 700 }} data-test="transf-error">
+            {error}
+          </div>
+        )}
+
+        <p style={{ fontSize: 11, color: "#888", margin: "12px 0 0" }}>
+          Se crea <strong>un egreso</strong>{" "}en Movimientos por el importe de la transferencia, con medio
+          &quot;Transferencia&quot;, y se aplica a las boletas como se ve arriba.
+        </p>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button
+            onClick={confirmar}
+            disabled={guardando}
+            style={{ ...botonStyle, background: RED, color: "white", opacity: guardando ? 0.6 : 1 }}
+            data-test="transf-confirmar"
+          >
+            {guardando ? "Guardando…" : "Registrar transferencia"}
+          </button>
+          <button onClick={onCerrar} style={{ ...botonStyle, background: "#F0F0F0", color: "#1A1A2E" }}>
+            Cancelar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
