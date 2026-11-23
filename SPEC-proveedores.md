@@ -155,12 +155,12 @@ de pruebas en memoria no tenía esa restricción, por eso R6.2 pasaba en el nave
   `movimientos.proveedor`. Renombrar un proveedor ya actualiza los movimientos; la
   migración extiende ese renombrado a las entregas.
 - **A2** Las entregas se cargan a mano. No se importan facturas ni se leen remitos.
-- **A3** Todo en pesos, sin IVA discriminado ni notas de crédito.
+- **A3** Todo en pesos, sin IVA discriminado. Las notas de crédito se agregaron el 23/11/2026: ver `SPEC-notas-credito.md`.
 - **A4** La deuda no tiene fecha de vencimiento: no hay alertas de "vence en X días".
 
 ## Fuera de alcance
 
 - Convertir un pedido de WhatsApp en entrega automáticamente (se descartó explícitamente).
-- Notas de crédito, devoluciones y ajustes de saldo.
+- Ajustes de saldo y notas de débito (las notas de crédito están en `SPEC-notas-credito.md`).
 - Vencimientos, intereses y antigüedad de la deuda.
 - Tocar la pestaña "Resumen por proveedor" que ya existe: queda como está.

@@ -6,11 +6,14 @@ import { AplicarChequeModal } from "@/app/ingresos-egresos/ChequeExistente";
 import { chequesSinUsar, repartirCheque, type ChequeBasico } from "@/lib/cheques/vinculo";
 import { entregasConSaldo } from "@/lib/ingresos-egresos/cuentaProveedores";
 import type {
+  AplicacionNotaCredito,
   EntregaProveedor,
   ImputacionPago,
   MedioPago,
   Movimiento,
+  NotaCreditoProveedor,
   NuevaEntregaProveedor,
+  NuevaNotaCredito,
   Proveedor,
 } from "@/lib/ingresos-egresos/types";
 
@@ -111,11 +114,60 @@ export default function PreviewProveedoresCliente() {
   const [movsConCheque] = useState([{ id: "m-viejo", cheque_id: "c4", proveedor: "Miga", descripcion: "Pago Miga", fecha: d(-15) }]);
   const chequesLibres = chequesSinUsar(cheques, [...movs, ...movsConCheque]);
   const [chequeAAplicar, setChequeAAplicar] = useState<string | null>(null);
+  // Notas de crédito (SPEC-notas-credito.md): arrancan vacías, las carga el verificador.
+  const [notas, setNotas] = useState<NotaCreditoProveedor[]>([]);
+  const [aplicacionesNota, setAplicacionesNota] = useState<AplicacionNotaCredito[]>([]);
+
+  /**
+   * Réplica del trigger validar_aplicacion_nota (038): una boleta no se cubre por más de su monto
+   * sumando pagos y notas, y una nota no se aplica por más de su monto. Recibe el estado actual para
+   * validar un lote entero, como haría la base fila por fila.
+   */
+  function validarNotas(
+    nuevas: { nota_id: string; entrega_id: string; monto: number }[],
+    notasAhora: NotaCreditoProveedor[],
+    aplicadasAhora: AplicacionNotaCredito[],
+  ): string | null {
+    const c = (n: number) => Math.round(Number(n) * 100);
+    const acumuladas: { nota_id: string; entrega_id: string; monto: number }[] = [...aplicadasAhora];
+    for (const a of nuevas) {
+      const entrega = entregas.find((e) => e.id === a.entrega_id);
+      const nota = notasAhora.find((n) => n.id === a.nota_id);
+      if (!entrega || !nota || c(a.monto) <= 0) return "No se pudo aplicar la nota de crédito. Probá de nuevo.";
+      const cubierto =
+        imputaciones.filter((i) => i.entrega_id === a.entrega_id).reduce((t, i) => t + c(i.monto), 0) +
+        acumuladas.filter((x) => x.entrega_id === a.entrega_id).reduce((t, x) => t + c(x.monto), 0);
+      const aplicadoNota = acumuladas.filter((x) => x.nota_id === a.nota_id).reduce((t, x) => t + c(x.monto), 0);
+      if (cubierto + c(a.monto) > c(entrega.monto) || aplicadoNota + c(a.monto) > c(nota.monto)) {
+        return "La nota ya no tiene tanto saldo, o la boleta ya está cubierta. Recargá la página.";
+      }
+      acumuladas.push(a);
+    }
+    return null;
+  }
+
+  async function aplicarNotas(nuevas: { nota_id: string; entrega_id: string; monto: number }[], notasAhora = notas) {
+    const err = validarNotas(nuevas, notasAhora, aplicacionesNota);
+    if (err) return err;
+    setAplicacionesNota((prev) => [...prev, ...nuevas.map((a) => ({ ...a, id: nextId(), creado_el: new Date().toISOString() }))]);
+    return null;
+  }
+
+  async function addNota(nueva: NuevaNotaCredito, aplicar: { entrega_id: string; monto: number } | null) {
+    const nota: NotaCreditoProveedor = { ...nueva, id: nextId(), creado_el: new Date().toISOString(), creado_por: null };
+    const notasAhora = [...notas, nota];
+    setNotas(notasAhora);
+    if (aplicar) {
+      const err = await aplicarNotas([{ nota_id: nota.id, ...aplicar }], notasAhora);
+      if (err) return `La nota de crédito se guardó, pero no se pudo aplicar a la boleta: quedó a favor. ${err}`;
+    }
+    return null;
+  }
 
   /** Réplica de aplicarCheque del Shell: un egreso vinculado al cheque, sin crear otro, y su reparto. */
   async function aplicarCheque(cheque: ChequeBasico, proveedor: string, entregaPrimeroId?: string | null) {
     if (!chequesLibres.some((c) => c.id === cheque.id)) return "Ese cheque ya está usado en otro pago.";
-    const pendientes = entregasConSaldo(entregas, imputaciones, proveedor).filter((e) => e.saldo > 0);
+    const pendientes = entregasConSaldo(entregas, imputaciones, proveedor, aplicacionesNota).filter((e) => e.saldo > 0);
     const { aplicaciones } = repartirCheque(Number(cheque.importe), pendientes, entregaPrimeroId);
     const id = nextId();
     setMovs((prev) => [
@@ -136,6 +188,7 @@ export default function PreviewProveedoresCliente() {
   function eliminarEntrega(id: string) {
     setEntregas((prev) => prev.filter((e) => e.id !== id));
     setImputaciones((prev) => prev.filter((im) => im.entrega_id !== id));
+    setAplicacionesNota((prev) => prev.filter((a) => a.entrega_id !== id));
   }
 
   const [proveedores, setProveedores] = useState(PROVEEDORES);
@@ -195,7 +248,8 @@ export default function PreviewProveedoresCliente() {
         Movimientos: <strong data-test="preview-cant-movs">{movs.length}</strong> ·
         {" "}total de egresos <strong data-test="preview-total-egresos">{movs.reduce((a, m) => a + (Number(m.egreso) || 0), 0)}</strong> ·
         {" "}cheques en Control de Cheques <strong data-test="preview-cant-cheques">{cheques.length}</strong> ·
-        {" "}sin usar <strong data-test="preview-cheques-libres">{chequesLibres.length}</strong>
+        {" "}sin usar <strong data-test="preview-cheques-libres">{chequesLibres.length}</strong> ·
+        {" "}notas de crédito <strong data-test="preview-cant-notas">{notas.length}</strong>
       </p>
       {/* Espejo del botón "Aplicar a deuda" de Control de Cheques, que lleva a este modal. */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
@@ -221,6 +275,8 @@ export default function PreviewProveedoresCliente() {
           movs={movs}
           entregas={entregas}
           imputaciones={imputaciones}
+          notas={notas}
+          aplicacionesNota={aplicacionesNota}
           corte={corte}
           nombresProveedores={proveedores.map((p) => p.nombre)}
           onAplicar={(c, p) => aplicarCheque(c, p)}
@@ -231,6 +287,15 @@ export default function PreviewProveedoresCliente() {
         movs={movs}
         entregas={entregas}
         imputaciones={imputaciones}
+        notas={notas}
+        aplicacionesNota={aplicacionesNota}
+        onAddNota={addNota}
+        onAplicarNotas={(a) => aplicarNotas(a)}
+        onDesaplicarNota={async (id) => setAplicacionesNota((prev) => prev.filter((a) => a.id !== id))}
+        onDeleteNota={(id) => {
+          setNotas((prev) => prev.filter((n) => n.id !== id));
+          setAplicacionesNota((prev) => prev.filter((a) => a.nota_id !== id));
+        }}
         proveedores={proveedores}
         esAdmin
         corte={corte}

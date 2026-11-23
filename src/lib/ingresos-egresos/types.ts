@@ -143,9 +143,44 @@ export interface ImputacionPago {
   creado_el: string;
 }
 
+/**
+ * Nota de crédito de un proveedor (SPEC-notas-credito.md): baja la deuda sin que salga plata de
+ * la caja, así que no es un movimiento. Se aplica a boletas o queda a favor.
+ */
+export interface NotaCreditoProveedor {
+  id: string;
+  proveedor: string;
+  fecha: string;
+  monto: number;
+  comprobante: string | null;
+  detalle: string | null;
+  creado_el: string;
+  creado_por: string | null;
+}
+
+export type NuevaNotaCredito = Omit<NotaCreditoProveedor, "id" | "creado_el" | "creado_por">;
+
+export interface AplicacionNotaCredito {
+  id: string;
+  nota_id: string;
+  entrega_id: string;
+  monto: number;
+  creado_el: string;
+}
+
+/** Una NC con lo que ya se aplicó a boletas y lo que queda a favor. */
+export interface NotaConSaldo extends NotaCreditoProveedor {
+  aplicado: number;
+  disponible: number;
+}
+
 /** Una entrega con lo que ya se le imputó y lo que falta. */
 export interface EntregaConSaldo extends EntregaProveedor {
+  /** Lo cubierto con pagos (movimientos). */
   pagado: number;
+  /** Lo cubierto con notas de crédito. 0 si no tiene. */
+  acreditado: number;
+  /** monto − pagado − acreditado. */
   saldo: number;
   estado: "Impaga" | "Parcial" | "Pagada";
 }
@@ -165,9 +200,11 @@ export interface CuentaProveedor {
   proveedor: string;
   entregado: number;
   pagado: number;
-  /** entregado − pagado. Positivo = le debés. */
+  /** Total de notas de crédito. */
+  notas: number;
+  /** entregado − pagado − notas. Positivo = le debés. */
   saldo: number;
-  /** Pagos cargados que todavía no se aplicaron a ninguna entrega. */
+  /** Pagos y notas de crédito que todavía no se aplicaron a ninguna entrega. */
   aCuenta: number;
   cantEntregasPendientes: number;
 }

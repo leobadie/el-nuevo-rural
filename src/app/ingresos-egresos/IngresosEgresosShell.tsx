@@ -24,6 +24,7 @@ import { AplicarChequeModal } from "./ChequeExistente";
 import { idsChequesUsados, puedeAplicarseADeuda, repartirCheque, type ChequeBasico } from "@/lib/cheques/vinculo";
 import { entregasConSaldo } from "@/lib/ingresos-egresos/cuentaProveedores";
 import type {
+  AplicacionNotaCredito,
   Categoria,
   ConfigProveedores,
   EntregaProveedor,
@@ -32,7 +33,9 @@ import type {
   LimiteCategoria,
   MedioPago,
   Movimiento,
+  NotaCreditoProveedor,
   NuevaEntregaProveedor,
+  NuevaNotaCredito,
   NuevoGastoFijo,
   NuevoMovimiento,
   NuevoPedido,
@@ -90,6 +93,8 @@ export default function IngresosEgresosShell({
   pedidosIniciales,
   entregasIniciales,
   imputacionesIniciales,
+  notasCreditoIniciales = [],
+  aplicacionesNotaIniciales = [],
   configProveedoresInicial,
   corteRegistros = null,
   guardadosAntesDelCorte = { movimientos: 0, ventasXRP: 0, pedidos: 0, entregas: 0 },
@@ -109,6 +114,9 @@ export default function IngresosEgresosShell({
   pedidosIniciales: Pedido[];
   entregasIniciales: EntregaProveedor[];
   imputacionesIniciales: ImputacionPago[];
+  /** Notas de crédito de proveedores (SPEC-notas-credito.md). */
+  notasCreditoIniciales?: NotaCreditoProveedor[];
+  aplicacionesNotaIniciales?: AplicacionNotaCredito[];
   configProveedoresInicial: ConfigProveedores | null;
   /** Desde cuándo se cuentan los registros (SPEC-corte-registros.md). null = todo. */
   corteRegistros?: string | null;
@@ -135,6 +143,8 @@ export default function IngresosEgresosShell({
   const [pedidos, setPedidos] = useState<Pedido[]>(pedidosIniciales);
   const [entregas, setEntregas] = useState<EntregaProveedor[]>(entregasIniciales);
   const [imputaciones, setImputaciones] = useState<ImputacionPago[]>(imputacionesIniciales);
+  const [notas, setNotas] = useState<NotaCreditoProveedor[]>(notasCreditoIniciales);
+  const [aplicacionesNota, setAplicacionesNota] = useState<AplicacionNotaCredito[]>(aplicacionesNotaIniciales);
   const [corte, setCorte] = useState<string | null>(configProveedoresInicial?.corte_cuenta_corriente ?? null);
   const [tab, setTab] = useState(
     initialTab && TABS.some((t) => t.key === initialTab) ? initialTab : "movimientos",
@@ -202,7 +212,7 @@ export default function IngresosEgresosShell({
    */
   async function aplicarCheque(cheque: ChequeBasico, proveedor: string, entregaPrimeroId?: string | null): Promise<string | null> {
     if (!chequesLibres.some((c) => c.id === cheque.id)) return "Ese cheque ya está usado en otro pago.";
-    const pendientes = entregasConSaldo(entregas, imputaciones, proveedor).filter((e) => e.saldo > 0);
+    const pendientes = entregasConSaldo(entregas, imputaciones, proveedor, aplicacionesNota).filter((e) => e.saldo > 0);
     const { aplicaciones } = repartirCheque(Number(cheque.importe), pendientes, entregaPrimeroId);
     const mov = await addMov({
       fecha: cheque.fecha_emision || hoyISO(),
@@ -321,6 +331,7 @@ export default function IngresosEgresosShell({
         }
         setEntregas((prev) => prev.filter((e) => e.id !== id));
         setImputaciones((prev) => prev.filter((im) => im.entrega_id !== id));
+        setAplicacionesNota((prev) => prev.filter((a) => a.entrega_id !== id));
       },
     );
   }
@@ -339,6 +350,73 @@ export default function IngresosEgresosShell({
     }
     setSaveError("");
     setImputaciones((prev) => [...prev, ...(data as ImputacionPago[])]);
+  }
+
+  /**
+   * Carga una nota de crédito y, si viene una boleta, la aplica (SPEC-notas-credito.md, 13-15).
+   * No crea ningún movimiento: no sale plata de la caja. Devuelve el error para mostrar, o null.
+   */
+  async function addNotaCredito(nueva: NuevaNotaCredito, aplicar: { entrega_id: string; monto: number } | null): Promise<string | null> {
+    const { data, error } = await supabase
+      .from("notas_credito_proveedor")
+      .insert({ ...nueva, creado_por: userId })
+      .select()
+      .single();
+    if (error || !data) {
+      console.error(error);
+      return error?.message?.includes("notas_credito_proveedor")
+        ? "Para cargar notas de crédito falta aplicar la migración 038 en Supabase."
+        : "No se pudo guardar la nota de crédito. Probá de nuevo.";
+    }
+    setSaveError("");
+    const nota = data as NotaCreditoProveedor;
+    setNotas((prev) => [...prev, nota]);
+    if (aplicar && aplicar.monto > 0) {
+      const err = await aplicarNotas([{ nota_id: nota.id, entrega_id: aplicar.entrega_id, monto: aplicar.monto }]);
+      if (err) return `La nota de crédito se guardó, pero no se pudo aplicar a la boleta: quedó a favor. ${err}`;
+    }
+    return null;
+  }
+
+  async function aplicarNotas(aplicaciones: { nota_id: string; entrega_id: string; monto: number }[]): Promise<string | null> {
+    if (aplicaciones.length === 0) return null;
+    const { data, error } = await supabase.from("aplicaciones_nota_credito").insert(aplicaciones).select();
+    if (error || !data) {
+      console.error(error);
+      const msg = error?.message?.includes("supera")
+        ? "La nota ya no tiene tanto saldo, o la boleta ya está cubierta. Recargá la página."
+        : "No se pudo aplicar la nota de crédito. Probá de nuevo.";
+      setSaveError(msg);
+      return msg;
+    }
+    setSaveError("");
+    setAplicacionesNota((prev) => [...prev, ...(data as AplicacionNotaCredito[])]);
+    return null;
+  }
+
+  async function desaplicarNota(id: string) {
+    const { error } = await supabase.from("aplicaciones_nota_credito").delete().eq("id", id);
+    if (error) {
+      setSaveError("No se pudo deshacer la aplicación. Probá de nuevo.");
+      return;
+    }
+    setSaveError("");
+    setAplicacionesNota((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  function eliminarNotaCredito(id: string) {
+    pedirConfirmacion(
+      "¿Eliminar esta nota de crédito? Se deshacen también sus aplicaciones y la deuda con el proveedor vuelve a subir.",
+      async () => {
+        const { error } = await supabase.from("notas_credito_proveedor").delete().eq("id", id);
+        if (error) {
+          setSaveError("No se pudo eliminar la nota de crédito. Probá de nuevo.");
+          return;
+        }
+        setNotas((prev) => prev.filter((n) => n.id !== id));
+        setAplicacionesNota((prev) => prev.filter((a) => a.nota_id !== id));
+      },
+    );
   }
 
   /**
@@ -471,6 +549,9 @@ export default function IngresosEgresosShell({
     // corriente se parte en dos proveedores distintos.
     await supabase.from("entregas_proveedor").update({ proveedor: nombreNuevo }).eq("proveedor", nombreViejo);
     setEntregas((prev) => prev.map((e) => (e.proveedor === nombreViejo ? { ...e, proveedor: nombreNuevo } : e)));
+    // Lo mismo con las notas de crédito (SPEC-notas-credito.md, 5).
+    await supabase.from("notas_credito_proveedor").update({ proveedor: nombreNuevo }).eq("proveedor", nombreViejo);
+    setNotas((prev) => prev.map((n) => (n.proveedor === nombreViejo ? { ...n, proveedor: nombreNuevo } : n)));
   }
 
   function eliminarProveedor(id: string) {
@@ -777,6 +858,12 @@ export default function IngresosEgresosShell({
           movs={movs}
           entregas={entregas}
           imputaciones={imputaciones}
+          notas={notas}
+          aplicacionesNota={aplicacionesNota}
+          onAddNota={addNotaCredito}
+          onAplicarNotas={aplicarNotas}
+          onDesaplicarNota={desaplicarNota}
+          onDeleteNota={eliminarNotaCredito}
           proveedores={proveedores}
           esAdmin={esAdmin}
           corte={corte}
@@ -816,6 +903,8 @@ export default function IngresosEgresosShell({
           movs={movs}
           entregas={entregas}
           imputaciones={imputaciones}
+          notas={notas}
+          aplicacionesNota={aplicacionesNota}
           corte={corte}
           nombresProveedores={nombresProveedores}
           onAplicar={(cheque, proveedor) => aplicarCheque(cheque, proveedor)}

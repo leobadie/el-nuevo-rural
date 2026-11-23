@@ -8,9 +8,11 @@ import {
   esDescuentoValido,
   esPagoAProveedor,
   montoConDescuento,
+  notasConSaldo,
   pagosConSaldo,
+  partirNota,
   repartirFIFO,
-  repartirTodoFIFO,
+  repartirTodoConNotasFIFO,
 } from "@/lib/ingresos-egresos/cuentaProveedores";
 import { fmtDateIE, fmtMoneyIE } from "@/lib/ingresos-egresos/calculos";
 import { RED, inputStyle, tdStyle, thStyle } from "@/lib/ingresos-egresos/estilos";
@@ -18,15 +20,30 @@ import { hoyISO } from "@/lib/fechas";
 import { ElegirCheque, VistaReparto } from "../ChequeExistente";
 import type { ChequeBasico } from "@/lib/cheques/vinculo";
 import type {
+  AplicacionNotaCredito,
   EntregaConSaldo,
   EntregaProveedor,
   ImputacionPago,
   MedioPago,
   Movimiento,
+  NotaCreditoProveedor,
   NuevaEntregaProveedor,
+  NuevaNotaCredito,
   PagoConSaldo,
   Proveedor,
 } from "@/lib/ingresos-egresos/types";
+
+/** Lo que el Shell expone para las notas de crédito (SPEC-notas-credito.md). */
+export interface PropsNotas {
+  notas: NotaCreditoProveedor[];
+  aplicacionesNota: AplicacionNotaCredito[];
+  /** Guarda la NC y, si viene, la aplica a esa boleta. Devuelve el error, o null. */
+  onAddNota: (nueva: NuevaNotaCredito, aplicar: { entrega_id: string; monto: number } | null) => Promise<string | null>;
+  /** Devuelve el error, o null. */
+  onAplicarNotas: (aplicaciones: { nota_id: string; entrega_id: string; monto: number }[]) => Promise<string | null>;
+  onDesaplicarNota: (id: string) => Promise<void>;
+  onDeleteNota: (id: string) => void;
+}
 
 const VERDE = "#145A32";
 const VERDE_BG = "#D5F5E3";
@@ -76,7 +93,8 @@ export default function CuentaProveedoresTab({
   onDesimputar,
   onSetCorte,
   onSetDescuentoProveedor,
-}: {
+  ...propsNotas
+}: PropsNotas & {
   movs: Movimiento[];
   entregas: EntregaProveedor[];
   imputaciones: ImputacionPago[];
@@ -103,10 +121,11 @@ export default function CuentaProveedoresTab({
   onSetDescuentoProveedor: (id: string, pct: number | null) => Promise<string | null>;
 }) {
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
+  const { notas, aplicacionesNota } = propsNotas;
 
   const cuentas = useMemo(
-    () => buildCuentasProveedores(entregas, movs, imputaciones, corte),
-    [entregas, movs, imputaciones, corte],
+    () => buildCuentasProveedores(entregas, movs, imputaciones, corte, notas, aplicacionesNota),
+    [entregas, movs, imputaciones, corte, notas, aplicacionesNota],
   );
   const pagosOcultos = useMemo(
     () => (corte ? movs.filter((m) => esPagoAProveedor(m) && !esPagoAProveedor(m, corte)).length : 0),
@@ -133,6 +152,7 @@ export default function CuentaProveedoresTab({
         onDesimputar={onDesimputar}
         datosProveedor={proveedores.find((p) => p.nombre === seleccionado)}
         onSetDescuento={onSetDescuentoProveedor}
+        {...propsNotas}
       />
     );
   }
@@ -152,7 +172,16 @@ export default function CuentaProveedoresTab({
 
       <AvisoCorte corte={corte} pagosOcultos={pagosOcultos} esAdmin={esAdmin} onSetCorte={onSetCorte} />
 
-      <NuevaEntregaForm proveedores={proveedores} onAddEntrega={onAddEntrega} onSetDescuento={onSetDescuentoProveedor} />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-start" }}>
+        <NuevaEntregaForm proveedores={proveedores} onAddEntrega={onAddEntrega} onSetDescuento={onSetDescuentoProveedor} />
+        <NuevaNotaForm
+          proveedores={proveedores}
+          entregas={entregas}
+          imputaciones={imputaciones}
+          aplicacionesNota={aplicacionesNota}
+          onAddNota={propsNotas.onAddNota}
+        />
+      </div>
 
       <div style={{ overflowX: "auto", border: "1px solid #ddd", borderRadius: 8 }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -161,6 +190,7 @@ export default function CuentaProveedoresTab({
               <th style={thStyle}>Proveedor</th>
               <th style={thStyle}>Entregado</th>
               <th style={thStyle}>Pagado</th>
+              <th style={thStyle}>N. crédito</th>
               <th style={thStyle}>Saldo</th>
               <th style={thStyle}>A cuenta</th>
               <th style={thStyle}></th>
@@ -169,7 +199,7 @@ export default function CuentaProveedoresTab({
           <tbody>
             {cuentas.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ ...tdStyle, textAlign: "center", color: "#888", padding: 24 }}>
+                <td colSpan={7} style={{ ...tdStyle, textAlign: "center", color: "#888", padding: 24 }}>
                   Todavía no hay entregas ni pagos cargados. Empezá cargando una entrega arriba.
                 </td>
               </tr>
@@ -191,6 +221,9 @@ export default function CuentaProveedoresTab({
                 </td>
                 <td style={tdStyle}>{fmtMoneyIE(c.entregado)}</td>
                 <td style={tdStyle}>{fmtMoneyIE(c.pagado)}</td>
+                <td style={{ ...tdStyle, color: c.notas > 0 ? "#1A1A2E" : "#888" }} data-test="cuenta-notas">
+                  {c.notas > 0 ? fmtMoneyIE(c.notas) : "—"}
+                </td>
                 <td style={{ ...tdStyle, fontWeight: 800, color: c.saldo > 0 ? ROJO_TX : VERDE }} data-test="cuenta-saldo">
                   {fmtMoneyIE(c.saldo)}
                 </td>
@@ -207,8 +240,9 @@ export default function CuentaProveedoresTab({
       </div>
 
       <p style={{ fontSize: 11, color: "#888", marginTop: 10 }}>
-        El saldo es lo entregado menos todo lo que le pagaste. &quot;A cuenta&quot; es plata que ya le diste
-        pero que todavía no aplicaste a ninguna entrega: entrá al detalle para aplicarla.
+        El saldo es lo entregado menos todo lo que le pagaste y las notas de crédito. &quot;A cuenta&quot; es
+        plata que ya le diste, o notas de crédito, que todavía no aplicaste a ninguna entrega: entrá al
+        detalle para aplicarla. Las notas de crédito no tocan la caja ni Movimientos.
       </p>
     </div>
   );
@@ -457,7 +491,7 @@ function NuevaEntregaForm({
   }
 
   return (
-    <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 14, marginBottom: 16, background: "#FAFBFC" }}>
+    <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 14, marginBottom: 16, background: "#FAFBFC", width: "100%", boxSizing: "border-box" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <strong style={{ fontSize: 14 }}>Nueva entrega{proveedorFijo ? ` — ${proveedorFijo}` : ""}</strong>
         <button onClick={() => setAbierto(false)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#888" }}>
@@ -544,6 +578,190 @@ function NuevaEntregaForm({
   );
 }
 
+/**
+ * Carga de una nota de crédito (SPEC-notas-credito.md, 12-15). Se puede aplicar en el momento a
+ * una boleta pendiente; si no, o si sobra, queda a favor. No crea ningún movimiento.
+ */
+function NuevaNotaForm({
+  proveedores,
+  proveedorFijo,
+  entregas,
+  imputaciones,
+  aplicacionesNota,
+  onAddNota,
+}: {
+  proveedores: Proveedor[];
+  proveedorFijo?: string;
+  entregas: EntregaProveedor[];
+  imputaciones: ImputacionPago[];
+  aplicacionesNota: AplicacionNotaCredito[];
+  onAddNota: PropsNotas["onAddNota"];
+}) {
+  const [abierto, setAbierto] = useState(false);
+  const [proveedor, setProveedor] = useState("");
+  const [fecha, setFecha] = useState(hoyISO);
+  const [monto, setMonto] = useState("");
+  const [comprobante, setComprobante] = useState("");
+  const [detalle, setDetalle] = useState("");
+  const [boletaId, setBoletaId] = useState("");
+  const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const nombre = proveedorFijo || proveedor;
+  const pendientes = useMemo(
+    () => (nombre ? entregasConSaldo(entregas, imputaciones, nombre, aplicacionesNota).filter((e) => e.saldo > 0) : []),
+    [entregas, imputaciones, aplicacionesNota, nombre],
+  );
+  const boleta = pendientes.find((e) => e.id === boletaId) ?? null;
+  const importe = parseFloat(monto);
+  const parte = importe > 0 ? partirNota(importe, boleta ? boleta.saldo : null) : null;
+
+  function cerrar() {
+    setAbierto(false);
+    setMonto("");
+    setComprobante("");
+    setDetalle("");
+    setBoletaId("");
+    setError("");
+  }
+
+  async function guardar() {
+    if (!nombre) {
+      setError("Elegí un proveedor.");
+      return;
+    }
+    if (!(importe > 0)) {
+      setError("El importe tiene que ser mayor a cero.");
+      return;
+    }
+    if (!fecha) {
+      setError("Poné la fecha de la nota de crédito.");
+      return;
+    }
+    setGuardando(true);
+    const err = await onAddNota(
+      { proveedor: nombre, fecha, monto: importe, comprobante: comprobante.trim() || null, detalle: detalle.trim() || null },
+      boleta && parte && parte.aplicar > 0 ? { entrega_id: boleta.id, monto: parte.aplicar } : null,
+    );
+    setGuardando(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    cerrar();
+  }
+
+  if (!abierto) {
+    return (
+      <button
+        onClick={() => setAbierto(true)}
+        style={{ ...botonStyle, background: "#F0F0F0", color: "#1A1A2E", border: "1px solid #ccc", marginBottom: 16, display: "inline-flex", alignItems: "center", gap: 6 }}
+        data-test="abrir-nueva-nota"
+      >
+        <Plus size={14} /> Cargar nota de crédito
+      </button>
+    );
+  }
+
+  return (
+    <div
+      style={{ border: "1px solid #ddd", borderRadius: 8, padding: 14, marginBottom: 16, background: "#F4F8FB", width: "100%", boxSizing: "border-box" }}
+      data-test="form-nota"
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <strong style={{ fontSize: 14 }}>Nueva nota de crédito{proveedorFijo ? ` — ${proveedorFijo}` : ""}</strong>
+        <button onClick={cerrar} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#888" }}>
+          <X size={16} />
+        </button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+        {!proveedorFijo && (
+          <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+            Proveedor
+            <select
+              value={proveedor}
+              onChange={(e) => {
+                setProveedor(e.target.value);
+                setBoletaId("");
+              }}
+              style={inputStyle}
+              data-test="nota-proveedor"
+            >
+              <option value="">— elegir —</option>
+              {proveedores.map((p) => (
+                <option key={p.id} value={p.nombre}>
+                  {p.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+          Fecha
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} style={inputStyle} data-test="nota-fecha" />
+        </label>
+        <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+          Importe de la nota
+          <input type="number" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0" style={inputStyle} data-test="nota-monto" />
+        </label>
+        <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+          N° de nota
+          <input value={comprobante} onChange={(e) => setComprobante(e.target.value)} placeholder="opcional" style={inputStyle} data-test="nota-comprobante" />
+        </label>
+        <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+          Motivo
+          <input value={detalle} onChange={(e) => setDetalle(e.target.value)} placeholder="devolución, vencido…" style={inputStyle} data-test="nota-detalle" />
+        </label>
+        <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
+          Aplicar a la boleta
+          <select value={boletaId} onChange={(e) => setBoletaId(e.target.value)} style={inputStyle} data-test="nota-boleta" disabled={!nombre}>
+            <option value="">No aplicar ahora (queda a favor)</option>
+            {pendientes.map((e) => (
+              <option key={e.id} value={e.id}>
+                {fmtDateIE(e.fecha)} — {e.comprobante || "sin comprobante"} — debe {fmtMoneyIE(e.saldo)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {parte && (
+        <div style={{ marginTop: 10, fontSize: 13, color: "#333" }} data-test="nota-vista">
+          {boleta && parte.aplicar > 0 ? (
+            <>
+              Se aplican <strong>{fmtMoneyIE(parte.aplicar)}</strong> a la boleta {boleta.comprobante || `del ${fmtDateIE(boleta.fecha)}`}
+              {parte.aFavor > 0 ? (
+                <>
+                  {" "}y quedan <strong>{fmtMoneyIE(parte.aFavor)}</strong> a favor.
+                </>
+              ) : (
+                <> (queda debiendo {fmtMoneyIE(boleta.saldo - parte.aplicar)}).</>
+              )}
+            </>
+          ) : (
+            <>
+              Quedan <strong>{fmtMoneyIE(parte.aFavor)}</strong> a favor del proveedor, para aplicar después.
+            </>
+          )}{" "}
+          <span style={{ color: "#888" }}>No se crea ningún egreso: la caja no cambia.</span>
+        </div>
+      )}
+      {error && (
+        <div style={{ color: ROJO_TX, fontSize: 12, marginTop: 8, fontWeight: 700 }} data-test="nota-error">
+          {error}
+        </div>
+      )}
+      <button
+        onClick={guardar}
+        disabled={guardando}
+        style={{ ...botonStyle, background: RED, color: "white", marginTop: 12, opacity: guardando ? 0.6 : 1 }}
+        data-test="guardar-nota"
+      >
+        {guardando ? "Guardando…" : "Guardar nota de crédito"}
+      </button>
+    </div>
+  );
+}
+
 function FichaProveedor({
   proveedor,
   movs,
@@ -561,7 +779,13 @@ function FichaProveedor({
   onDesimputar,
   datosProveedor,
   onSetDescuento,
-}: {
+  notas,
+  aplicacionesNota,
+  onAddNota,
+  onAplicarNotas,
+  onDesaplicarNota,
+  onDeleteNota,
+}: PropsNotas & {
   proveedor: string;
   /** La fila de la tabla proveedores (para el % de descuento). Puede faltar si sólo hay entregas. */
   datosProveedor?: Proveedor;
@@ -590,25 +814,45 @@ function FichaProveedor({
 }) {
   const [pagando, setPagando] = useState<EntregaConSaldo | null>(null);
   const [aplicando, setAplicando] = useState<string | null>(null);
+  const [aplicandoNota, setAplicandoNota] = useState<string | null>(null);
 
-  const lista = useMemo(() => entregasConSaldo(entregas, imputaciones, proveedor), [entregas, imputaciones, proveedor]);
+  const lista = useMemo(
+    () => entregasConSaldo(entregas, imputaciones, proveedor, aplicacionesNota),
+    [entregas, imputaciones, proveedor, aplicacionesNota],
+  );
   const pagos = useMemo(
     () => pagosConSaldo(movs, imputaciones, proveedor, corte),
     [movs, imputaciones, proveedor, corte],
   );
+  const listaNotas = useMemo(() => notasConSaldo(notas, aplicacionesNota, proveedor), [notas, aplicacionesNota, proveedor]);
   const pendientes = useMemo(() => lista.filter((e) => e.saldo > 0), [lista]);
   const aplicaciones = useMemo(
     () => imputaciones.filter((im) => lista.some((e) => e.id === im.entrega_id)),
     [imputaciones, lista],
   );
+  const aplicacionesDeNotas = useMemo(
+    () => aplicacionesNota.filter((a) => lista.some((e) => e.id === a.entrega_id)),
+    [aplicacionesNota, lista],
+  );
 
   const entregado = lista.reduce((a, e) => a + e.monto, 0);
   const pagado = pagos.reduce((a, p) => a + p.monto, 0);
-  const saldo = entregado - pagado;
-  const aCuenta = pagos.reduce((a, p) => a + p.disponible, 0);
+  const totalNotas = listaNotas.reduce((a, n) => a + n.monto, 0);
+  const saldo = entregado - pagado - totalNotas;
+  const pagosSinAplicar = pagos.reduce((a, p) => a + p.disponible, 0);
+  const notasSinAplicar = listaNotas.reduce((a, n) => a + n.disponible, 0);
+  const aCuenta = pagosSinAplicar + notasSinAplicar;
 
   const pagoAplicando = pagos.find((p) => p.id === aplicando);
+  const notaAplicando = listaNotas.find((n) => n.id === aplicandoNota);
   const conDisponible = useMemo(() => pagos.filter((p) => p.disponible > 0), [pagos]);
+  const notasConDisponible = useMemo(() => listaNotas.filter((n) => n.disponible > 0), [listaNotas]);
+
+  async function aplicarNotaAuto(notaId: string, disponible: number) {
+    const reparto = repartirFIFO(disponible, pendientes);
+    if (reparto.length === 0) return;
+    await onAplicarNotas(reparto.map((r) => ({ nota_id: notaId, entrega_id: r.entrega_id, monto: r.monto })));
+  }
 
   async function aplicarAuto(pagoId: string, disponible: number) {
     const reparto = repartirFIFO(disponible, pendientes);
@@ -619,10 +863,14 @@ function FichaProveedor({
     await onImputar(reparto.map((r) => ({ movimiento_id: pagoId, entrega_id: r.entrega_id, monto: r.monto })));
   }
 
+  /**
+   * Reparte pagos y notas a favor juntos (SPEC-notas-credito.md, 20). Van a dos tablas: primero
+   * los pagos y después las notas, que se calcularon sobre los saldos que dejan los pagos.
+   */
   async function aplicarTodoACuenta() {
-    const reparto = repartirTodoFIFO(conDisponible, pendientes);
-    if (reparto.length === 0) return;
-    await onImputar(reparto);
+    const reparto = repartirTodoConNotasFIFO(conDisponible, notasConDisponible, pendientes);
+    if (reparto.pagos.length > 0) await onImputar(reparto.pagos);
+    if (reparto.notas.length > 0) await onAplicarNotas(reparto.notas);
   }
 
   return (
@@ -647,6 +895,10 @@ function FichaProveedor({
           <div style={{ fontSize: 10, fontWeight: 700, color: "#666" }}>PAGADO</div>
           <div style={{ fontSize: 16, fontWeight: 700 }} data-test="ficha-pagado">{fmtMoneyIE(pagado)}</div>
         </div>
+        <div style={{ background: "#F8F9FA", borderRadius: 8, padding: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#666" }}>NOTAS DE CRÉDITO</div>
+          <div style={{ fontSize: 16, fontWeight: 700 }} data-test="ficha-notas">{fmtMoneyIE(totalNotas)}</div>
+        </div>
         <div style={{ background: saldo > 0 ? ROJO_BG : VERDE_BG, color: saldo > 0 ? ROJO_TX : VERDE, borderRadius: 8, padding: 12 }}>
           <div style={{ fontSize: 10, fontWeight: 700 }}>SALDO</div>
           <div style={{ fontSize: 16, fontWeight: 800 }} data-test="ficha-saldo">{fmtMoneyIE(saldo)}</div>
@@ -657,7 +909,17 @@ function FichaProveedor({
         </div>
       </div>
 
-      <NuevaEntregaForm proveedores={datosProveedor ? [datosProveedor] : []} proveedorFijo={proveedor} onAddEntrega={onAddEntrega} />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-start" }}>
+        <NuevaEntregaForm proveedores={datosProveedor ? [datosProveedor] : []} proveedorFijo={proveedor} onAddEntrega={onAddEntrega} />
+        <NuevaNotaForm
+          proveedores={datosProveedor ? [datosProveedor] : []}
+          proveedorFijo={proveedor}
+          entregas={entregas}
+          imputaciones={imputaciones}
+          aplicacionesNota={aplicacionesNota}
+          onAddNota={onAddNota}
+        />
+      </div>
 
       {aCuenta > 0 && pendientes.length > 0 && (
         <div
@@ -665,7 +927,12 @@ function FichaProveedor({
           data-test="aviso-acuenta"
         >
           <span style={{ fontSize: 12 }}>
-            Este proveedor tiene <strong>{fmtMoneyIE(aCuenta)}</strong> ya pagados en Movimientos y
+            Este proveedor tiene <strong>{fmtMoneyIE(aCuenta)}</strong>
+            {pagosSinAplicar > 0 && notasSinAplicar > 0
+              ? ` a favor (${fmtMoneyIE(pagosSinAplicar)} ya pagados en Movimientos y ${fmtMoneyIE(notasSinAplicar)} en notas de crédito)`
+              : notasSinAplicar > 0
+                ? " en notas de crédito"
+                : " ya pagados en Movimientos"}{" "}
             todavía sin aplicar, y {pendientes.length === 1 ? "una entrega pendiente" : `${pendientes.length} entregas pendientes`}.
             No hace falta volver a cargar el pago.
           </span>
@@ -712,7 +979,14 @@ function FichaProveedor({
                     </div>
                   )}
                 </td>
-                <td style={tdStyle}>{fmtMoneyIE(e.pagado)}</td>
+                <td style={tdStyle}>
+                  {fmtMoneyIE(e.pagado)}
+                  {e.acreditado > 0 && (
+                    <div style={{ fontSize: 11, color: "#1F618D", whiteSpace: "nowrap" }} data-test="entrega-acreditado">
+                      NC −{fmtMoneyIE(e.acreditado)}
+                    </div>
+                  )}
+                </td>
                 <td style={{ ...tdStyle, fontWeight: 700, color: e.saldo > 0 ? ROJO_TX : VERDE }} data-test="entrega-saldo">
                   {fmtMoneyIE(e.saldo)}
                 </td>
@@ -809,9 +1083,116 @@ function FichaProveedor({
         />
       )}
 
+      <h3 style={{ fontSize: 14, fontWeight: 800, margin: "22px 0 8px" }}>Notas de crédito</h3>
+      <div style={{ overflowX: "auto", border: "1px solid #ddd", borderRadius: 8 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Fecha</th>
+              <th style={thStyle}>N° / Motivo</th>
+              <th style={thStyle}>Monto</th>
+              <th style={thStyle}>Aplicado</th>
+              <th style={thStyle}>Sin aplicar</th>
+              <th style={thStyle}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {listaNotas.length === 0 && (
+              <tr>
+                <td colSpan={6} style={{ ...tdStyle, textAlign: "center", color: "#888", padding: 20 }}>
+                  Sin notas de crédito para este proveedor.
+                </td>
+              </tr>
+            )}
+            {listaNotas.map((n, i) => (
+              <tr key={n.id} style={{ background: i % 2 === 1 ? "#F2F6FC" : "white", borderTop: "1px solid #eee" }} data-test="fila-nota">
+                <td style={tdStyle}>{fmtDateIE(n.fecha)}</td>
+                <td style={tdStyle}>
+                  {n.comprobante || "—"}
+                  {n.detalle && <div style={{ fontSize: 11, color: "#888" }}>{n.detalle}</div>}
+                </td>
+                <td style={{ ...tdStyle, fontWeight: 700 }}>{fmtMoneyIE(n.monto)}</td>
+                <td style={tdStyle}>{fmtMoneyIE(n.aplicado)}</td>
+                <td style={{ ...tdStyle, fontWeight: 700, color: n.disponible > 0 ? AMBAR_TX : "#888" }} data-test="nota-disponible">
+                  {n.disponible > 0 ? fmtMoneyIE(n.disponible) : "—"}
+                </td>
+                <td style={{ ...tdStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                  {n.disponible > 0 && pendientes.length > 0 && (
+                    <>
+                      <button onClick={() => aplicarNotaAuto(n.id, n.disponible)} style={{ ...botonStyle, background: RED, color: "white" }} data-test="btn-nota-auto">
+                        Aplicar automático
+                      </button>
+                      <button
+                        onClick={() => setAplicandoNota(aplicandoNota === n.id ? null : n.id)}
+                        style={{ ...botonStyle, background: "#F0F0F0", color: "#1A1A2E", marginLeft: 6 }}
+                        data-test="btn-nota-elegir"
+                      >
+                        Elegir
+                      </button>
+                    </>
+                  )}
+                  {esAdmin && (
+                    <button
+                      onClick={() => onDeleteNota(n.id)}
+                      title="Eliminar nota de crédito"
+                      style={{ ...botonStyle, background: "transparent", color: "#C0392B", padding: "7px 6px" }}
+                      data-test="btn-borrar-nota"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {notaAplicando && (
+        <AplicarPagoForm
+          key={notaAplicando.id}
+          pago={notaAplicando}
+          pendientes={pendientes}
+          titulo={`Aplicar ${fmtMoneyIE(notaAplicando.disponible)} de la nota de crédito`}
+          onCancelar={() => setAplicandoNota(null)}
+          onConfirmar={async (entregaId, monto) => {
+            const err = await onAplicarNotas([{ nota_id: notaAplicando.id, entrega_id: entregaId, monto }]);
+            if (!err) setAplicandoNota(null);
+          }}
+        />
+      )}
+
       <h3 style={{ fontSize: 14, fontWeight: 800, margin: "22px 0 8px" }}>Aplicaciones</h3>
+      {aplicacionesDeNotas.length > 0 && (
+        <ul style={{ listStyle: "none", padding: 0, margin: "0 0 10px", border: "1px solid #D6E4F0", borderRadius: 8, background: "#F4F8FB" }}>
+          {aplicacionesDeNotas.map((a) => {
+            const e = lista.find((x) => x.id === a.entrega_id);
+            const n = listaNotas.find((x) => x.id === a.nota_id);
+            return (
+              <li
+                key={a.id}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 12px", borderTop: "1px solid #E5EEF6", fontSize: 12, flexWrap: "wrap" }}
+                data-test="fila-aplicacion-nota"
+              >
+                <span>
+                  <strong>{fmtMoneyIE(Number(a.monto))}</strong> de la nota de crédito del {n ? fmtDateIE(n.fecha) : "?"}
+                  {n?.comprobante ? ` (${n.comprobante})` : ""} → entrega del {e ? fmtDateIE(e.fecha) : "?"}
+                  {e?.comprobante ? ` (${e.comprobante})` : ""}
+                </span>
+                <button
+                  onClick={() => onDesaplicarNota(a.id)}
+                  style={{ ...botonStyle, background: "transparent", color: "#C0392B", padding: "4px 6px" }}
+                  data-test="btn-desaplicar-nota"
+                >
+                  Deshacer
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       {aplicaciones.length === 0 ? (
-        <p style={{ fontSize: 12, color: "#888" }}>Todavía no aplicaste ningún pago a una entrega.</p>
+        aplicacionesDeNotas.length === 0 && <p style={{ fontSize: 12, color: "#888" }}>Todavía no aplicaste ningún pago a una entrega.</p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0, margin: 0, border: "1px solid #ddd", borderRadius: 8 }}>
           {aplicaciones.map((im) => {
@@ -847,6 +1228,7 @@ function FichaProveedor({
           entrega={pagando}
           proveedor={proveedor}
           pagosDisponibles={conDisponible}
+          notasSinAplicar={notasSinAplicar}
           pendientes={pendientes}
           chequesLibres={chequesLibres}
           onAplicarCheque={async (cheque) => {
@@ -872,11 +1254,13 @@ function FichaProveedor({
 function AplicarPagoForm({
   pago,
   pendientes,
+  titulo,
   onCancelar,
   onConfirmar,
 }: {
   pago: { id: string; disponible: number };
   pendientes: EntregaConSaldo[];
+  titulo?: string;
   onCancelar: () => void;
   onConfirmar: (entregaId: string, monto: number) => Promise<void>;
 }) {
@@ -901,7 +1285,7 @@ function AplicarPagoForm({
 
   return (
     <div style={{ border: `1px solid ${RED}`, borderRadius: 8, padding: 14, marginTop: 12, background: "#FFF8F8" }}>
-      <strong style={{ fontSize: 13 }}>Aplicar {fmtMoneyIE(pago.disponible)} disponibles</strong>
+      <strong style={{ fontSize: 13 }}>{titulo ?? `Aplicar ${fmtMoneyIE(pago.disponible)} disponibles`}</strong>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginTop: 10 }}>
         <label style={{ fontSize: 11, fontWeight: 700, color: "#666" }}>
           Entrega
@@ -965,10 +1349,13 @@ function PagarEntregaModal({
   onCerrar,
   onConfirmar,
   onAplicarExistente,
+  notasSinAplicar = 0,
 }: {
   entrega: EntregaConSaldo;
   proveedor: string;
   pagosDisponibles: PagoConSaldo[];
+  /** Notas de crédito a favor sin aplicar: se avisa para no pagar de más (SPEC-notas-credito.md, 21). */
+  notasSinAplicar?: number;
   pendientes: EntregaConSaldo[];
   chequesLibres: ChequeBasico[];
   onAplicarCheque: (cheque: ChequeBasico) => Promise<string | null>;
@@ -1071,6 +1458,15 @@ function PagarEntregaModal({
         <p style={{ fontSize: 12, color: "#666", margin: "0 0 14px" }}>
           {proveedor} · entrega del {fmtDateIE(entrega.fecha)} · debe <strong>{fmtMoneyIE(entrega.saldo)}</strong>
         </p>
+        {notasSinAplicar > 0 && (
+          <p
+            style={{ fontSize: 12, color: "#1F618D", background: "#EAF2F8", borderRadius: 6, padding: "8px 10px", margin: "0 0 14px" }}
+            data-test="aviso-notas-pagar"
+          >
+            Este proveedor tiene <strong>{fmtMoneyIE(notasSinAplicar)}</strong> en notas de crédito sin aplicar.
+            Si corresponden a esta boleta, aplicalas desde la tabla de notas de crédito antes de pagar.
+          </p>
+        )}
 
         <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
           {hayDisponibles && (

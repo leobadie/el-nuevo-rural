@@ -11,7 +11,14 @@ import { filtrarCheques, ordenarParaProveedor, parecidoProveedor, repartirCheque
 import { buildCuentasProveedores, entregasConSaldo } from "@/lib/ingresos-egresos/cuentaProveedores";
 import { fmtDateIE, fmtMoneyIE } from "@/lib/ingresos-egresos/calculos";
 import { RED, inputStyle } from "@/lib/ingresos-egresos/estilos";
-import type { EntregaConSaldo, EntregaProveedor, ImputacionPago, Movimiento } from "@/lib/ingresos-egresos/types";
+import type {
+  AplicacionNotaCredito,
+  EntregaConSaldo,
+  EntregaProveedor,
+  ImputacionPago,
+  Movimiento,
+  NotaCreditoProveedor,
+} from "@/lib/ingresos-egresos/types";
 
 const boton = { border: "none", borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" } as const;
 
@@ -144,6 +151,8 @@ export function AplicarChequeModal({
   movs,
   entregas,
   imputaciones,
+  notas = [],
+  aplicacionesNota = [],
   corte,
   nombresProveedores,
   onAplicar,
@@ -154,12 +163,18 @@ export function AplicarChequeModal({
   movs: Movimiento[];
   entregas: EntregaProveedor[];
   imputaciones: ImputacionPago[];
+  /** Notas de crédito: bajan la deuda y el saldo de las boletas (SPEC-notas-credito.md). */
+  notas?: NotaCreditoProveedor[];
+  aplicacionesNota?: AplicacionNotaCredito[];
   corte: string | null;
   nombresProveedores: string[];
   onAplicar: (cheque: ChequeBasico, proveedor: string) => Promise<string | null>;
   onCerrar: () => void;
 }) {
-  const cuentas = useMemo(() => buildCuentasProveedores(entregas, movs, imputaciones, corte), [entregas, movs, imputaciones, corte]);
+  const cuentas = useMemo(
+    () => buildCuentasProveedores(entregas, movs, imputaciones, corte, notas, aplicacionesNota),
+    [entregas, movs, imputaciones, corte, notas, aplicacionesNota],
+  );
   const opciones = useMemo(() => {
     const deuda = new Map(cuentas.map((c) => [c.proveedor, c.saldo]));
     const nombres = [...new Set([...nombresProveedores, ...cuentas.map((c) => c.proveedor)])];
@@ -174,8 +189,8 @@ export function AplicarChequeModal({
   const [hecho, setHecho] = useState(false);
 
   const pendientes = useMemo(
-    () => (proveedor ? entregasConSaldo(entregas, imputaciones, proveedor).filter((e) => e.saldo > 0) : []),
-    [entregas, imputaciones, proveedor],
+    () => (proveedor ? entregasConSaldo(entregas, imputaciones, proveedor, aplicacionesNota).filter((e) => e.saldo > 0) : []),
+    [entregas, imputaciones, proveedor, aplicacionesNota],
   );
 
   async function confirmar() {

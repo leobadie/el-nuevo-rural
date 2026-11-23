@@ -4,7 +4,15 @@
  *
  * Sin React ni Supabase, para probarlo suelto (`npm run verificar:corte`).
  */
-import type { EntregaProveedor, ImputacionPago, Movimiento, Pedido, VentaXRP } from "./types";
+import type {
+  AplicacionNotaCredito,
+  EntregaProveedor,
+  ImputacionPago,
+  Movimiento,
+  NotaCreditoProveedor,
+  Pedido,
+  VentaXRP,
+} from "./types";
 
 /**
  * ¿Un registro cargado en `cargadoEl` entra, con este corte? Sin corte entra todo. Se compara
@@ -53,6 +61,22 @@ export function aplicarCorte(datos: DatosIE, corte: string | null | undefined): 
       entregas: datos.entregas.length - entregas.length,
     },
   };
+}
+
+/**
+ * Las notas de crédito con el corte (SPEC-notas-credito.md, 6): igual que las entregas, por cuándo
+ * se cargaron. Una aplicación sólo se ve si se ven la nota y la entrega.
+ */
+export function aplicarCorteNotas(
+  notas: NotaCreditoProveedor[],
+  aplicaciones: AplicacionNotaCredito[],
+  entregasVisibles: EntregaProveedor[],
+  corte: string | null | undefined,
+): { notas: NotaCreditoProveedor[]; aplicaciones: AplicacionNotaCredito[] } {
+  const visibles = notas.filter((n) => cuentaDesdeCorte(n.creado_el, corte));
+  const idsNota = new Set(visibles.map((n) => n.id));
+  const idsEnt = new Set(entregasVisibles.map((e) => e.id));
+  return { notas: visibles, aplicaciones: aplicaciones.filter((a) => idsNota.has(a.nota_id) && idsEnt.has(a.entrega_id)) };
 }
 
 /** El corte de la cuenta corriente: el más nuevo entre el suyo (013) y el general (SPEC 5). */

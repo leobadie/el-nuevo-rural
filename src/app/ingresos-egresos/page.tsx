@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { aplicarCorte, corteCuentaCorriente } from "@/lib/ingresos-egresos/corte";
+import { aplicarCorte, aplicarCorteNotas, corteCuentaCorriente } from "@/lib/ingresos-egresos/corte";
 import { leerCorteIE } from "@/lib/ingresos-egresos/corteServidor";
 import { traerTodo } from "@/lib/supabase/traerTodo";
 import { idsChequesUsados, type ChequeBasico } from "@/lib/cheques/vinculo";
 import IngresosEgresosShell from "./IngresosEgresosShell";
 import type {
+  AplicacionNotaCredito,
   Categoria,
   ConfigProveedores,
   EntregaProveedor,
@@ -13,6 +14,7 @@ import type {
   ImputacionPago,
   LimiteCategoria,
   Movimiento,
+  NotaCreditoProveedor,
   Pedido,
   Proveedor,
   VentaXRP,
@@ -51,6 +53,8 @@ export default async function IngresosEgresosPage({
     imputacionesRes,
     configProveedoresRes,
     chequesRes,
+    notasRes,
+    aplicacionesNotaRes,
   ] = await Promise.all([
     traerTodo<Movimiento>((desde, hasta, conTotal) =>
       supabase
@@ -80,6 +84,24 @@ export default async function IngresosEgresosPage({
         .order("id", { ascending: true })
         .range(desde, hasta),
     ),
+    // Notas de crédito (SPEC-notas-credito.md). Si la migración 038 no está aplicada, la consulta
+    // da error y la pantalla sigue andando sin notas.
+    traerTodo<NotaCreditoProveedor>((desde, hasta, conTotal) =>
+      supabase
+        .from("notas_credito_proveedor")
+        .select("*", { count: conTotal ? "exact" : undefined })
+        .order("creado_el", { ascending: true })
+        .order("id", { ascending: true })
+        .range(desde, hasta),
+    ),
+    traerTodo<AplicacionNotaCredito>((desde, hasta, conTotal) =>
+      supabase
+        .from("aplicaciones_nota_credito")
+        .select("*", { count: conTotal ? "exact" : undefined })
+        .order("creado_el", { ascending: true })
+        .order("id", { ascending: true })
+        .range(desde, hasta),
+    ),
   ]);
 
   // Corte de registros (SPEC-corte-registros.md): lo cargado antes sigue en la base, pero la
@@ -98,6 +120,7 @@ export default async function IngresosEgresosPage({
   // Un cheque usado por un pago de antes del corte sigue usado: si no, volvería a ofrecerse.
   // Los de después los calcula la pantalla con los movimientos que tiene en memoria.
   const idsVisibles = new Set(visibles.movimientos.map((m) => m.id));
+  const notasVisibles = aplicarCorteNotas(notasRes.data, aplicacionesNotaRes.data, visibles.entregas, corte);
   const chequesUsados = [
     ...idsChequesUsados(((movsRes.data ?? []) as Movimiento[]).filter((m) => !idsVisibles.has(m.id))),
   ];
@@ -123,6 +146,8 @@ export default async function IngresosEgresosPage({
       entregasIniciales={visibles.entregas}
       imputacionesIniciales={visibles.imputaciones}
       configProveedoresInicial={configProveedoresEfectiva}
+      notasCreditoIniciales={notasVisibles.notas}
+      aplicacionesNotaIniciales={notasVisibles.aplicaciones}
       corteRegistros={corte}
       guardadosAntesDelCorte={guardados}
       chequesIniciales={chequesRes.data}
