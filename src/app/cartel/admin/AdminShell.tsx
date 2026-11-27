@@ -20,7 +20,14 @@ import PlacaVista from "../PlacaVista";
 import PantallasPanel from "./PantallasPanel";
 import FlyerTab, { type AccionesFlyer } from "./FlyerTab";
 import VideoEditor from "./VideoEditor";
-import { duracionClips, opcionesVideo } from "@/lib/cartel/video";
+import {
+  duracionClips,
+  encuadreSugerido,
+  formaDeTeles,
+  opcionesVideo,
+  textoEncuadreSugerido,
+  type EncuadreSugerido,
+} from "@/lib/cartel/video";
 import { puedeIrAlFlyer, siguienteOrdenFlyer, type ConfigFlyer } from "@/lib/ofertas/flyer";
 import {
   NARANJA,
@@ -30,6 +37,7 @@ import {
   fmtPrecio,
   hoyISO,
   estaVigente,
+  normalizarSeccion,
 } from "@/lib/cartel/placas";
 import type { Asignacion, Clip, EncuadreVideo, FocoVideo, Pantalla, Placa, TextoVideo, TipoPlaca } from "@/lib/cartel/types";
 
@@ -172,6 +180,43 @@ export default function AdminShell({
     setForm((f) => ({ ...f, [campo]: valor }));
   }
 
+  // Encuadre automático de los videos (SPEC-cartel-encuadre-auto.md). Se vuelve a
+  // elegir al cambiar los videos, las teles o la sección, salvo que se haya tocado a mano.
+  const encuadreTocado = useRef(false);
+  /** Si el encuadre actual lo eligió el sistema en esta edición: solo ahí se explica. */
+  const [encuadreAuto, setEncuadreAuto] = useState(false);
+
+  /** Giros de las teles a las que iría la placa (la misma regla que la pantalla). */
+  function rotacionesDestino(f: Form): (number | undefined)[] {
+    const elegidas = pantallasIniciales.filter((p) => f.pantallas.includes(p.slug));
+    if (elegidas.length > 0) return elegidas.map((p) => p.rotacion);
+    const seccion = f.seccion.trim() ? normalizarSeccion(f.seccion) : null;
+    return pantallasIniciales
+      .filter((p) => p.activa && (!seccion || !p.seccion || normalizarSeccion(p.seccion) === seccion))
+      .map((p) => p.rotacion);
+  }
+
+  /** Cambia el formulario y, si corresponde, vuelve a elegir el encuadre. */
+  function cambiarConEncuadre(cambio: (f: Form) => Form) {
+    if (!encuadreTocado.current) setEncuadreAuto(true);
+    setForm((anterior) => {
+      const f = cambio(anterior);
+      if (encuadreTocado.current || f.tipo !== "video") return f;
+      const s = sugerenciaPara(f);
+      return s ? { ...f, video_encuadre: s.encuadre } : f;
+    });
+  }
+
+  function sugerenciaPara(f: Form): EncuadreSugerido | null {
+    return encuadreSugerido(f.clips, formaDeTeles(rotacionesDestino(f)));
+  }
+
+  /** Al abrir una placa o empezar una nueva, el encuadre vuelve a ser automático. */
+  function reiniciarEncuadre() {
+    encuadreTocado.current = false;
+    setEncuadreAuto(false);
+  }
+
   /** La placa que se está armando, tal como la vería el televisor. */
   const previa: Placa = {
     id: "previa",
@@ -205,6 +250,7 @@ export default function AdminShell({
     // final del loop en vez de pisar el lugar de otra.
     const siguiente = placas.length > 0 ? Math.max(...placas.map((p) => p.orden)) + 1 : 1;
     setForm({ ...FORM_VACIO, orden: String(siguiente) });
+    reiniciarEncuadre();
     setError(null);
     setAviso(null);
   }
@@ -356,6 +402,7 @@ export default function AdminShell({
       setVista("ofertas");
       setEditando(placa.id);
       setForm(formDesde(placa, asignaciones));
+      reiniciarEncuadre();
       setAviso(null);
       setError(null);
       irAlFormulario();
@@ -662,6 +709,7 @@ export default function AdminShell({
                         onClick={() => {
                           setEditando(p.id);
                           setForm(formDesde(p, asignaciones));
+                          reiniciarEncuadre();
                           setAviso(null);
                           setError(null);
                           irAlFormulario();
@@ -703,7 +751,10 @@ export default function AdminShell({
                       escribir una nueva sin tocar la base ni el código. */}
                   <input
                     value={form.seccion}
-                    onChange={(e) => set("seccion", e.target.value)}
+                    onChange={(e) => {
+                      const seccion = e.target.value;
+                      cambiarConEncuadre((f) => ({ ...f, seccion }));
+                    }}
                     list="secciones-cartel"
                     placeholder="Carnicería (vacío = se ve en todas las pantallas)"
                     style={input}
@@ -731,12 +782,10 @@ export default function AdminShell({
                               type="button"
                               key={p.slug}
                               onClick={() =>
-                                set(
-                                  "pantallas",
-                                  elegida
-                                    ? form.pantallas.filter((s) => s !== p.slug)
-                                    : [...form.pantallas, p.slug],
-                                )
+                                cambiarConEncuadre((f) => ({
+                                  ...f,
+                                  pantallas: elegida ? f.pantallas.filter((s) => s !== p.slug) : [...f.pantallas, p.slug],
+                                }))
                               }
                               style={{
                                 border: `1px solid ${elegida ? NAVY : "#CBD5E1"}`,
@@ -777,7 +826,7 @@ export default function AdminShell({
                   <Campo etiqueta="Video">
                     <VideoEditor
                       clips={form.clips}
-                      actualizar={(cambio) => setForm((f) => ({ ...f, clips: cambio(f.clips) }))}
+                      actualizar={(cambio) => cambiarConEncuadre((f) => ({ ...f, clips: cambio(f.clips) }))}
                       supabase={supabase}
                       onError={setError}
                       // Teles paradas: el video se prepara también girado (SPEC-cartel-convertir-video.md, punto 16).
@@ -797,13 +846,25 @@ export default function AdminShell({
                     <Campo etiqueta="Encuadre">
                       <Opciones
                         valor={form.video_encuadre}
-                        onChange={(v) => set("video_encuadre", v)}
+                        onChange={(v) => {
+                          encuadreTocado.current = true;
+                          setEncuadreAuto(false);
+                          set("video_encuadre", v);
+                        }}
                         opciones={[
                           ["entero", "Entero, con bordes"],
                           ["llenar", "Llenar la pantalla (recorta)"],
                         ]}
                         prueba="video-encuadre"
                       />
+                      {(() => {
+                        const s = encuadreAuto ? sugerenciaPara(form) : null;
+                        return s && s.encuadre === form.video_encuadre ? (
+                          <p style={{ fontSize: 12, color: "#64748B", margin: "6px 0 0" }} data-test="encuadre-sugerido">
+                            {textoEncuadreSugerido(s)}
+                          </p>
+                        ) : null;
+                      })()}
                     </Campo>
                     {form.video_encuadre === "llenar" && (
                       <Campo etiqueta="Si sobra, qué parte se ve">

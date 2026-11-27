@@ -167,7 +167,9 @@ try {
     // ---- Paso 3: encuadre y precio encima --------------------------------
     const videoPrevia = previa.locator(".pl-video video");
     const estilo = () => videoPrevia.evaluate((v) => ({ fit: getComputedStyle(v).objectFit, pos: getComputedStyle(v).objectPosition }));
-    ok((await estilo()).fit === "contain", `${nombre}: por defecto el video se ve entero`, JSON.stringify(await estilo()));
+    // El de muestra es 9:16, igual que la tele parada: el encuadre se elige solo en
+    // "llenar" (SPEC-cartel-encuadre-auto.md, punto 1; antes el valor por defecto era "entero").
+    ok((await estilo()).fit === "cover", `${nombre}: un video 9:16 queda en "llenar" solo`, JSON.stringify(await estilo()));
     await a.click('[data-test="video-encuadre"] [data-valor="llenar"]');
     await a.click('[data-test="video-foco"] [data-valor="inicio"]');
     const lleno = await estilo();
@@ -434,7 +436,13 @@ try {
               alto: bb ? bb.height / m.height : null,
             };
           });
-          ok(r.fit === "cover" && r.pos === "100% 100%", `${forma}: el video llena la pantalla mostrando el final`, `${r.fit} ${r.pos}`);
+          if (forma === "acostado") {
+            // La muestra es 9:16: llenar una tele acostada se comería el 68 %, así que se
+            // muestra entera (SPEC-cartel-encuadre-auto.md, punto 8).
+            ok(r.fit === "contain", `${forma}: un video parado en tele acostada se ve entero aunque diga "llenar"`, `${r.fit} ${r.pos}`);
+          } else {
+            ok(r.fit === "cover" && r.pos === "100% 100%", `${forma}: el video llena la pantalla mostrando el final`, `${r.fit} ${r.pos}`);
+          }
           ok(/8\.990/.test(r.texto) && /22% OFF/.test(r.texto) && /el kilo/.test(r.texto), `${forma}: el precio va encima del video`, r.texto);
           ok(r.arriba != null && r.arriba < 2, `${forma}: arriba, como se eligió`, `${r.arriba}px`);
           ok(r.alto != null && r.alto < (forma === "acostado" ? 0.6 : 0.4), `${forma}: la banda deja ver el video`, `${Math.round((r.alto ?? 1) * 100)}% del alto`);

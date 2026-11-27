@@ -295,3 +295,64 @@ export function duplicarClip(clips: Clip[], i: number): Clip[] {
   const copia = acotarTramo({ ...c, desde: c.hasta, hasta: c.hasta + largo });
   return [...clips.slice(0, i + 1), copia, ...clips.slice(i + 1)];
 }
+
+/** Hasta este recorte, al subir un video se elige "llenar" (SPEC-cartel-encuadre-auto.md, punto 1). */
+export const RECORTE_PARA_LLENAR = 0.25;
+/** Más que esto en una tele concreta y "llenar" se muestra entero (punto 8). */
+export const RECORTE_MAXIMO_TELE = 0.5;
+
+/** Forma de la tele parada y acostada (ancho / alto). */
+export const FORMA_PARADA = 9 / 16;
+export const FORMA_ACOSTADA = 16 / 9;
+
+/**
+ * Qué parte del video queda afuera si llena la pantalla: 0 = nada, 0,5 = la mitad.
+ * Medidas inválidas dan 0 (no hay con qué decidir).
+ */
+export function recorte(anchoVideo: number, altoVideo: number, anchoPantalla: number, altoPantalla: number): number {
+  if (!(anchoVideo > 0 && altoVideo > 0 && anchoPantalla > 0 && altoPantalla > 0)) return 0;
+  const v = anchoVideo / altoVideo;
+  const p = anchoPantalla / altoPantalla;
+  return 1 - Math.min(v, p) / Math.max(v, p);
+}
+
+/**
+ * La forma contra la que se elige: parada si va a alguna tele parada o si no se
+ * sabe; acostada solo si todas las teles a las que va son acostadas (punto 2).
+ */
+export function formaDeTeles(rotaciones: (number | null | undefined)[]): number {
+  if (rotaciones.length === 0) return FORMA_PARADA;
+  return rotaciones.some((r) => r === 90 || r === 270) ? FORMA_PARADA : FORMA_ACOSTADA;
+}
+
+export type EncuadreSugerido = { encuadre: EncuadreVideo; recorte: number };
+
+/**
+ * El encuadre que conviene para estos videos en una tele de esta forma: "llenar"
+ * si ninguno pierde más de RECORTE_PARA_LLENAR. null si ningún video tiene medidas.
+ * `recorte` es el peor de todos.
+ */
+export function encuadreSugerido(clips: Pick<Clip, "ancho" | "alto">[], forma: number): EncuadreSugerido | null {
+  const recortes = clips
+    .filter((c) => (c.ancho ?? 0) > 0 && (c.alto ?? 0) > 0)
+    .map((c) => recorte(c.ancho as number, c.alto as number, forma, 1));
+  if (recortes.length === 0) return null;
+  const peor = Math.max(...recortes);
+  return { encuadre: peor <= RECORTE_PARA_LLENAR + 1e-9 ? "llenar" : "entero", recorte: peor };
+}
+
+/** La línea que explica la elección en el admin (punto 5). */
+export function textoEncuadreSugerido(s: EncuadreSugerido): string {
+  const pct = Math.round(s.recorte * 100);
+  if (s.encuadre === "entero") {
+    return `Elegido solo: la forma del video es muy distinta a la de la tele (recortaría ${pct} %).`;
+  }
+  return pct === 0
+    ? "Elegido solo: el video tiene la misma forma que la tele, no recorta nada."
+    : `Elegido solo: el video tiene casi la forma de la tele, recorta ${pct} %.`;
+}
+
+/** En la tele: "llenar" que se comería demasiado se muestra entero (punto 8). */
+export function encuadreEnTele(encuadre: EncuadreVideo, recorteEnTele: number): EncuadreVideo {
+  return encuadre === "llenar" && recorteEnTele > RECORTE_MAXIMO_TELE ? "entero" : encuadre;
+}

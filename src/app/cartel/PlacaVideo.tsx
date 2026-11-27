@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Placa } from "@/lib/cartel/types";
 import { colorDePlaca, fmtPrecio, porcentajeAhorro, textoVigencia } from "@/lib/cartel/placas";
-import { estiloVideo, estiloVideoGirado, opcionesVideo, urlGirada } from "@/lib/cartel/video";
+import { encuadreEnTele, estiloVideo, estiloVideoGirado, opcionesVideo, recorte, urlGirada } from "@/lib/cartel/video";
 
 /** Si un video no arranca, cuánto se espera antes de saltarlo. */
 const ESPERA_ERROR_MS = 2000;
@@ -51,7 +51,11 @@ export default function PlacaVideo({
   const ref = useRef<HTMLVideoElement>(null);
   const terminado = useRef(false);
   const clip = clips[i] ?? clips[0];
-  const { encuadre, foco, texto } = opcionesVideo(placa);
+  const { encuadre: elegido, foco, texto } = opcionesVideo(placa);
+  // Cuánto se perdería llenando ESTA pantalla, medido con lo que de verdad se dibuja
+  // (SPEC-cartel-encuadre-auto.md, puntos 8-9): un video parado en Pasillo o Acceso.
+  const [recorteAqui, setRecorteAqui] = useState(0);
+  const encuadre = encuadreEnTele(elegido, recorteAqui);
 
   // Cada tramo arranca en su `desde`. Con el mismo archivo no hace falta
   // recargarlo: alcanza con mover la posición.
@@ -66,6 +70,24 @@ export default function PlacaVideo({
     else v.addEventListener("loadedmetadata", empezar, { once: true });
     return () => v.removeEventListener("loadedmetadata", empezar);
   }, [clip, i, quieto]);
+
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    const medir = () => setRecorteAqui(recorte(v.videoWidth, v.videoHeight, v.clientWidth, v.clientHeight));
+    medir();
+    v.addEventListener("loadedmetadata", medir);
+    // La caja puede cambiar sin que cambie la ventana (la previa del admin pasa a
+    // "TV acostado"): se mira la caja misma. Chrome 94 de las teles ya lo tiene.
+    const obs = typeof ResizeObserver !== "undefined" ? new ResizeObserver(medir) : null;
+    obs?.observe(v);
+    window.addEventListener("resize", medir);
+    return () => {
+      v.removeEventListener("loadedmetadata", medir);
+      obs?.disconnect();
+      window.removeEventListener("resize", medir);
+    };
+  }, [clip, capa]);
 
   // Un video que no carga se salta: nunca un cuadro negro trabado.
   useEffect(() => {
