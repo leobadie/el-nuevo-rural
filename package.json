@@ -68,7 +68,9 @@
     "verificar:tienda": "node verificacion/tienda.mjs",
     "verificar:tienda-fotos": "node verificacion/tienda-fotos.mts",
     "verificar:base-tienda-fotos": "node verificacion/base-tienda-fotos.mts",
-    "tienda:fotos": "node scripts/buscar-fotos-off.mjs"
+    "tienda:fotos": "node scripts/buscar-fotos-off.mjs",
+    "verificar:cartel-encuadre-calculos": "node verificacion/cartel-encuadre-calculos.mts",
+    "verificar:cartel-encuadre": "node verificacion/cartel-encuadre.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",
