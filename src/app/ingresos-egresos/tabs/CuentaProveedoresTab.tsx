@@ -9,6 +9,7 @@ import {
   esPagoAProveedor,
   montoConDescuento,
   notasConSaldo,
+  nuevasPrimero,
   pagosConSaldo,
   partirNota,
   repartirFIFO,
@@ -733,7 +734,7 @@ function NuevaNotaForm({
           Aplicar a la boleta
           <select value={boletaId} onChange={(e) => setBoletaId(e.target.value)} style={inputStyle} data-test="nota-boleta" disabled={!nombre}>
             <option value="">No aplicar ahora (queda a favor)</option>
-            {pendientes.map((e) => (
+            {nuevasPrimero(pendientes).map((e) => (
               <option key={e.id} value={e.id}>
                 {fmtDateIE(e.fecha)} — {e.comprobante || "sin comprobante"} — debe {fmtMoneyIE(e.saldo)}
               </option>
@@ -1006,7 +1007,7 @@ function FichaProveedor({
                 </td>
               </tr>
             )}
-            {lista.map((e, i) => (
+            {nuevasPrimero(lista).map((e, i) => (
               <tr key={e.id} style={{ background: i % 2 === 1 ? "#F2F6FC" : "white", borderTop: "1px solid #eee" }} data-test="fila-entrega">
                 <td style={tdStyle}>{fmtDateIE(e.fecha)}</td>
                 <td style={tdStyle}>
@@ -1078,7 +1079,7 @@ function FichaProveedor({
                 </td>
               </tr>
             )}
-            {pagos.map((p, i) => (
+            {nuevasPrimero(pagos).map((p, i) => (
               <tr key={p.id} style={{ background: i % 2 === 1 ? "#F2F6FC" : "white", borderTop: "1px solid #eee" }} data-test="fila-pago">
                 <td style={tdStyle}>{fmtDateIE(p.fecha)}</td>
                 <td style={tdStyle}>
@@ -1146,7 +1147,7 @@ function FichaProveedor({
                 </td>
               </tr>
             )}
-            {listaNotas.map((n, i) => (
+            {nuevasPrimero(listaNotas).map((n, i) => (
               <tr key={n.id} style={{ background: i % 2 === 1 ? "#F2F6FC" : "white", borderTop: "1px solid #eee" }} data-test="fila-nota">
                 <td style={tdStyle}>{fmtDateIE(n.fecha)}</td>
                 <td style={tdStyle}>
@@ -1421,7 +1422,7 @@ function PagarTransferenciaModal({
           <p style={{ fontSize: 12, color: "#888", margin: 0 }}>No tiene boletas pendientes: toda la transferencia queda a cuenta.</p>
         ) : (
           <div style={{ border: "1px solid #ddd", borderRadius: 8, maxHeight: 220, overflowY: "auto" }}>
-            {pendientes.map((e) => (
+            {nuevasPrimero(pendientes).map((e) => (
               <label
                 key={e.id}
                 style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: "1px solid #eee", fontSize: 12, cursor: "pointer" }}
@@ -1542,7 +1543,7 @@ function AplicarPagoForm({
             style={inputStyle}
             data-test="aplicar-entrega"
           >
-            {pendientes.map((e) => (
+            {nuevasPrimero(pendientes).map((e) => (
               <option key={e.id} value={e.id}>
                 {fmtDateIE(e.fecha)} — {e.comprobante || "sin comprobante"} — debe {fmtMoneyIE(e.saldo)}
               </option>
@@ -1774,7 +1775,7 @@ function PagarEntregaModal({
                 style={inputStyle}
                 data-test="pago-existente"
               >
-                {pagosDisponibles.map((p) => (
+                {nuevasPrimero(pagosDisponibles).map((p) => (
                   <option key={p.id} value={p.id}>
                     {fmtDateIE(p.fecha)} — {p.descripcion || "sin descripción"} — quedan {fmtMoneyIE(p.disponible)}
                   </option>

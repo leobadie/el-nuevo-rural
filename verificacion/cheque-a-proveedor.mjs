@@ -64,7 +64,9 @@ async function main() {
   // ---------- Desde Pagar, en la cuenta corriente (R4) ----------
   await abrirItaliana(page);
   // Entregas de Italiana: e1 $100.000 (vieja) y e2 $50.000 (nueva). Se paga la nueva.
-  await t("btn-pagar").nth(1).click();
+  // Las boletas se muestran de la más nueva a la más vieja (SPEC-boletas-nuevas-arriba.md): se
+  // busca la fila por comprobante y no por posición.
+  await t("fila-entrega").filter({ hasText: "R-0002" }).locator('[data-test="btn-pagar"]').click();
   await page.waitForSelector('[data-test="modal-pago"]');
   check("R4a", "El modal Pagar ofrece \"Cheque ya cargado\"", (await t("modo-cheque").count()) === 1);
 
@@ -99,7 +101,7 @@ async function main() {
     (await t("preview-cant-cheques").innerText()) === "5" && (await t("preview-cheques-libres").innerText()) === "2");
   const estados = await t("fila-entrega").allInnerTexts();
   check("R4g", "La entrega nueva queda Pagada y la vieja Parcial",
-    estados[1]?.includes("Pagada") && estados[0]?.includes("Parcial"), estados.map((e) => e.replace(/\s+/g, " ").slice(0, 60)).join(" | "));
+    estados.some((e) => e.includes("R-0002") && e.includes("Pagada")) && estados.some((e) => e.includes("R-0001") && e.includes("Parcial")), estados.map((e) => e.replace(/\s+/g, " ").slice(0, 60)).join(" | "));
   await page.screenshot({ path: path.join(OUT, "cheque-ficha-despues-desktop.png"), fullPage: true });
 
   // ---------- Desde Control de Cheques: "Aplicar a deuda" (R5) ----------
@@ -132,7 +134,7 @@ async function main() {
   await movil.goto(URL, { waitUntil: "domcontentloaded" });
   await movil.waitForSelector('[data-test="fila-cuenta"]');
   await abrirItaliana(movil);
-  await movil.locator('[data-test="btn-pagar"]').nth(1).click();
+  await movil.locator('[data-test="fila-entrega"]', { hasText: "R-0002" }).locator('[data-test="btn-pagar"]').click();
   await movil.locator('[data-test="modo-cheque"]').click();
   await movil.locator('[data-test="opcion-cheque"]').first().click();
   const desborde = await movil.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

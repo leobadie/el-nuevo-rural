@@ -37,8 +37,16 @@ const texto = async (p, sel) => (await p.locator(sel).first().innerText()).trim(
 async function abrirItaliana(p) {
   await p.goto(URL, { waitUntil: "domcontentloaded" });
   await p.waitForSelector('[data-test="fila-cuenta"]');
-  await p.locator('[data-test="fila-cuenta"]', { hasText: "Italiana" }).click();
-  await p.waitForSelector('[data-test="ficha-saldo"]');
+  // En dev la fila se pinta antes de que React hidrate y un clic temprano se pierde: se reintenta.
+  for (let i = 0; ; i++) {
+    await p.locator('[data-test="fila-cuenta"]', { hasText: "Italiana" }).click();
+    try {
+      await p.waitForSelector('[data-test="ficha-saldo"]', { timeout: 3000 });
+      return;
+    } catch (e) {
+      if (i >= 5) throw e;
+    }
+  }
 }
 
 async function cargarEntrega(p, monto, comprobante) {
