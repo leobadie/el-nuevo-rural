@@ -309,3 +309,11 @@ export function repartirTransferencia(
   const aplicadoC = aplicaciones.reduce((t, a) => t + centavos(a.monto), 0);
   return { aplicaciones, aCuenta: pesos(Math.max(centavos(importe) - aplicadoC, 0)) };
 }
+
+/**
+ * Para mostrar: lo más nuevo arriba (SPEC-boletas-nuevas-arriba.md). Las listas de arriba vienen de
+ * la más vieja a la más nueva porque así se reparte la plata (FIFO); esto sólo da vuelta la copia.
+ */
+export function nuevasPrimero<T>(lista: readonly T[]): T[] {
+  return [...lista].reverse();
+}

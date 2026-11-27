@@ -143,7 +143,7 @@ async function main() {
   check("20a", "La franja de saldo a cuenta menciona las notas de crédito", franja.includes("notas de crédito"), franja.replace(/\s+/g, " "));
 
   // ---------- 21: aviso en el modal de Pagar ----------
-  await page.locator('[data-test="btn-pagar"]').first().click();
+  await page.locator('[data-test="fila-entrega"]', { hasText: "R-0001" }).locator('[data-test="btn-pagar"]').click();
   await page.waitForSelector('[data-test="modal-pago"]');
   check("21", "El modal de Pagar avisa que hay NC sin aplicar",
     (await page.locator('[data-test="aviso-notas-pagar"]').count()) === 1 && (await texto(page, '[data-test="aviso-notas-pagar"]')).includes("25.000"));
@@ -152,11 +152,13 @@ async function main() {
   // ---------- 17: Aplicar automático, deshacer ----------
   await page.locator('[data-test="btn-nota-auto"]').click();
   await page.waitForSelector('[data-test="entrega-acreditado"]');
+  // Nuevas arriba (SPEC-boletas-nuevas-arriba.md): R-0001, la más vieja, es la última fila.
   const filasEnt = page.locator('[data-test="fila-entrega"]');
+  check("18o", "La boleta más vieja (R-0001) es la última fila", (await filasEnt.last().innerText()).includes("R-0001"));
   check("18", "La boleta más vieja (R-0001) muestra la NC aplicada debajo de lo pagado",
-    (await filasEnt.first().innerText()).includes("R-0001") && num(await filasEnt.first().locator('[data-test="entrega-acreditado"]').innerText()) === 25000);
+    (await filasEnt.last().innerText()).includes("R-0001") && num(await filasEnt.last().locator('[data-test="entrega-acreditado"]').innerText()) === 25000);
   check("9", "R-0001 queda Parcial con saldo $75.000",
-    num(await filasEnt.first().locator('[data-test="entrega-saldo"]').innerText()) === 75000 && (await filasEnt.first().innerText()).includes("Parcial"));
+    num(await filasEnt.last().locator('[data-test="entrega-saldo"]').innerText()) === 75000 && (await filasEnt.last().innerText()).includes("Parcial"));
   check("19a", "La aplicación figura en la lista y se puede deshacer", (await page.locator('[data-test="fila-aplicacion-nota"]').count()) === 1);
   check("8c", "Aplicar no cambia el saldo del proveedor ($65.000)", num(await texto(page, '[data-test="ficha-saldo"]')) === 65000);
   await page.screenshot({ path: path.join(OUT, "notas-ficha-aplicada-desktop.png"), fullPage: true });
@@ -183,7 +185,7 @@ async function main() {
   // ---------- 20: repartir pago y NC juntos ----------
   await page.locator('[data-test="btn-aplicar-todo"]').click();
   await page.waitForSelector('[data-test="aviso-acuenta"]', { state: "detached" });
-  const saldosEnt = (await page.locator('[data-test="entrega-saldo"]').allInnerTexts()).map(num);
+  const saldosEnt = (await page.locator('[data-test="entrega-saldo"]').allInnerTexts()).map(num).reverse(); // nuevas arriba: se da vuelta para leer R-0001, R-0002
   check("20b", "Reparte el pago ($60.000) y lo que queda de la NC ($15.000) sin pasarse",
     saldosEnt.join() === "25000,40000", saldosEnt.join(" / "));
   check("7a", "Cierra: Σ saldos de boletas = saldo del proveedor y no queda nada a cuenta",

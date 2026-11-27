@@ -121,6 +121,8 @@ async function main() {
 
   await page.screenshot({ path: path.join(OUT, "proveedores-ficha-desktop.png"), fullPage: true });
 
+  // Las boletas se muestran de la más nueva a la más vieja (SPEC-boletas-nuevas-arriba.md): las
+  // filas se buscan por comprobante, no por posición. R-0001 es la vieja ($100.000).
   // ---------- R9: pagar una entrega con plata que ya está a cuenta ----------
   // El bug era que "Pagar" creaba SIEMPRE un egreso nuevo, así que el pago quedaba
   // cargado dos veces y el total de Movimientos subía el doble.
@@ -135,7 +137,7 @@ async function main() {
   const egresosAntes = await egresos();
   const movsAntes = await cantMovs();
 
-  await page.locator('[data-test="btn-pagar"]').first().click();
+  await page.locator('[data-test="fila-entrega"]', { hasText: "R-0001" }).locator('[data-test="btn-pagar"]').click();
   await page.waitForSelector('[data-test="modal-pago"]');
 
   check("R9.1", "Con plata a cuenta, el modal abre en \"usar un pago ya cargado\"",
@@ -164,7 +166,7 @@ async function main() {
 
   const saldosR9 = await page.locator('[data-test="entrega-saldo"]').allInnerTexts();
   check("R9.1b", `Aplicar ${plata(20000)} baja la deuda de la entrega a ${plata(80000)}`,
-    num(saldosR9[0]) === 80000, saldosR9.join(" / "));
+    num(await page.locator('[data-test="fila-entrega"]', { hasText: "R-0001" }).locator('[data-test="entrega-saldo"]').innerText()) === 80000, saldosR9.join(" / "));
   check("R2.2c", `Quedan ${plata(40000)} a cuenta`,
     num(await page.locator('[data-test="ficha-acuenta"]').innerText()) === 40000,
     await page.locator('[data-test="ficha-acuenta"]').innerText());
@@ -181,16 +183,16 @@ async function main() {
 
   const saldosEntrega = await page.locator('[data-test="entrega-saldo"]').allInnerTexts();
   check("R6.2", `FIFO: los ${plata(40000)} que quedan van a la entrega más vieja, que queda debiendo ${plata(40000)}`,
-    num(saldosEntrega[0]) === 40000 && num(saldosEntrega[1]) === 50000,
+    num(await page.locator('[data-test="fila-entrega"]', { hasText: "R-0001" }).locator('[data-test="entrega-saldo"]').innerText()) === 40000 && num(await page.locator('[data-test="fila-entrega"]', { hasText: "R-0002" }).locator('[data-test="entrega-saldo"]').innerText()) === 50000,
     saldosEntrega.join(" / "));
   check("R2.2b", "Ya no queda saldo a cuenta",
     num(await page.locator('[data-test="ficha-acuenta"]').innerText()) === 0);
 
-  const chips = await page.locator('[data-test="fila-entrega"]').first().innerText();
+  const chips = await page.locator('[data-test="fila-entrega"]', { hasText: "R-0001" }).innerText();
   check("R4.3b", "La entrega pagada a medias queda en Parcial", chips.includes("Parcial"), chips.replace(/\n/g, " | "));
 
   // ---------- R5: pagar desde la ficha ----------
-  await page.locator('[data-test="btn-pagar"]').first().click();
+  await page.locator('[data-test="fila-entrega"]', { hasText: "R-0001" }).locator('[data-test="btn-pagar"]').click();
   await page.waitForSelector('[data-test="modal-pago"]');
 
   check("R9.2", "Sin plata a cuenta, el modal abre directo en \"cargar un pago nuevo\", sin elegir",
@@ -214,8 +216,8 @@ async function main() {
   await page.waitForTimeout(400);
 
   const saldosPost = await page.locator('[data-test="entrega-saldo"]').allInnerTexts();
-  check("R5.3", "El pago desde la ficha salda la entrega", num(saldosPost[0]) === 0, saldosPost.join(" / "));
-  const primeraFila = await page.locator('[data-test="fila-entrega"]').first().innerText();
+  check("R5.3", "El pago desde la ficha salda la entrega", num(await page.locator('[data-test="fila-entrega"]', { hasText: "R-0001" }).locator('[data-test="entrega-saldo"]').innerText()) === 0, saldosPost.join(" / "));
+  const primeraFila = await page.locator('[data-test="fila-entrega"]', { hasText: "R-0001" }).innerText();
   check("R4.3c", "La entrega queda en Pagada", primeraFila.includes("Pagada"));
   check("R5.3b", `El saldo del proveedor baja a ${plata(50000)}`,
     num(await page.locator('[data-test="ficha-saldo"]').innerText()) === 50000,
@@ -305,7 +307,7 @@ async function main() {
   check("R9.5b", "La franja de aviso no desborda la ficha en móvil", desbordeAviso <= 1, `${desbordeAviso}px de desborde`);
   await mobile.screenshot({ path: path.join(OUT, "proveedores-aviso-acuenta-movil.png"), fullPage: true });
 
-  await mobile.locator('[data-test="btn-pagar"]').first().click();
+  await mobile.locator('[data-test="fila-entrega"]', { hasText: "R-0001" }).locator('[data-test="btn-pagar"]').click();
   await mobile.waitForSelector('[data-test="modal-pago"]');
   const desbordeModal = await mobile.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
